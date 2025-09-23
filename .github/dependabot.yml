@@ -1,18 +1,72 @@
 version: 2
 updates:
+  # Maven dependencies monitoring (Java projects)
   - package-ecosystem: "maven"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+      time: "09:00"
+      timezone: "UTC"
     open-pull-requests-limit: 10
+    assignees:
+      - "davidkims"
+    reviewers:
+      - "davidkims"
     labels:
       - "dependencies"
       - "java"
+      - "maven"
+      - "security"
+    commit-message:
+      prefix: "maven"
+      include: "scope"
+    rebase-strategy: "auto"
+    allow:
+      - dependency-type: "all"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
+  
+  # Docker dependencies monitoring
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+      time: "09:00"
+      timezone: "UTC"
     open-pull-requests-limit: 10
+    assignees:
+      - "davidkims"
+    reviewers:
+      - "davidkims"
     labels:
       - "dependencies"
       - "docker"
+      - "security"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    rebase-strategy: "auto"
+    allow:
+      - dependency-type: "all"
+  
+  # GitHub Actions monitoring
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "09:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    assignees:
+      - "davidkims"
+    reviewers:
+      - "davidkims"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "security"
+    commit-message:
+      prefix: "github-actions"
+      include: "scope"
+    rebase-strategy: "auto"
