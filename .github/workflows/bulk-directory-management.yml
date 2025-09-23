@@ -1,0 +1,751 @@
+name: Bulk Directory and Permission Management
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: 'Operation to perform'
+        required: true
+        type: choice
+        options:
+          - create-directories
+          - create-permission-files
+          - update-permissions
+          - bulk-setup
+        default: 'bulk-setup'
+      directory_template:
+        description: 'Directory template (standard, microservices, monorepo, docker)'
+        required: false
+        type: choice
+        options:
+          - standard
+          - microservices
+          - monorepo
+          - docker
+          - custom
+        default: 'standard'
+      permission_level:
+        description: 'Permission level to apply'
+        required: false
+        type: choice
+        options:
+          - strict
+          - standard
+          - permissive
+          - custom
+        default: 'standard'
+      custom_directories:
+        description: 'Custom directories (comma-separated, e.g., "api,web,mobile")'
+        required: false
+        default: ''
+      dry_run:
+        description: 'Dry run (preview changes without applying)'
+        required: false
+        type: boolean
+        default: false
+
+  schedule:
+    - cron: '0 2 * * 1'  # Weekly on Monday at 2 AM UTC
+
+  push:
+    paths:
+      - '.github/directory-config.yml'
+      - '.github/permission-config.yml'
+
+jobs:
+  bulk-directory-management:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pyyaml jinja2 pathspec
+
+      - name: Create bulk operations directory
+        run: |
+          mkdir -p .github/bulk-ops/{templates,configs,scripts,logs}
+
+      - name: Generate directory configuration
+        run: |
+          cat > .github/bulk-ops/configs/directory-templates.yml << 'EOF'
+          # Directory Templates Configuration
+          templates:
+            standard:
+              description: "Standard project structure"
+              directories:
+                - src/main/java
+                - src/main/resources
+                - src/test/java
+                - src/test/resources
+                - docs
+                - scripts
+                - config
+                - logs
+                - temp
+                - build
+              permissions:
+                src: "755"
+                docs: "755"
+                scripts: "755"
+                config: "644"
+                logs: "777"
+                temp: "777"
+                build: "755"
+          
+            microservices:
+              description: "Microservices architecture"
+              directories:
+                - services/user-service/src
+                - services/user-service/config
+                - services/user-service/tests
+                - services/auth-service/src
+                - services/auth-service/config
+                - services/auth-service/tests
+                - services/api-gateway/src
+                - services/api-gateway/config
+                - services/api-gateway/tests
+                - shared/libraries
+                - shared/config
+                - shared/docs
+                - infrastructure/docker
+                - infrastructure/kubernetes
+                - infrastructure/terraform
+                - monitoring/logs
+                - monitoring/metrics
+                - scripts/deployment
+                - scripts/database
+              permissions:
+                services: "755"
+                shared: "755"
+                infrastructure: "755"
+                monitoring: "777"
+                scripts: "755"
+          
+            docker:
+              description: "Docker-focused project structure"
+              directories:
+                - docker/images/base
+                - docker/images/app
+                - docker/images/db
+                - docker/compose/development
+                - docker/compose/staging
+                - docker/compose/production
+                - docker/volumes/data
+                - docker/volumes/logs
+                - docker/volumes/config
+                - docker/secrets
+                - docker/scripts
+                - containers/web
+                - containers/api
+                - containers/worker
+                - kubernetes/manifests
+                - kubernetes/configs
+                - kubernetes/secrets
+              permissions:
+                docker: "755"
+                containers: "755"
+                kubernetes: "755"
+                secrets: "600"
+                volumes: "777"
+          
+            monorepo:
+              description: "Monorepo structure with multiple projects"
+              directories:
+                - apps/web-app/src
+                - apps/web-app/public
+                - apps/web-app/tests
+                - apps/mobile-app/src
+                - apps/mobile-app/assets
+                - apps/mobile-app/tests
+                - apps/api-server/src
+                - apps/api-server/config
+                - apps/api-server/tests
+                - packages/shared-components
+                - packages/utilities
+                - packages/types
+                - tools/build
+                - tools/testing
+                - tools/deployment
+                - docs/api
+                - docs/guides
+                - docs/architecture
+                - config/development
+                - config/staging
+                - config/production
+              permissions:
+                apps: "755"
+                packages: "755"
+                tools: "755"
+                docs: "755"
+                config: "644"
+          EOF
+
+      - name: Generate permission configuration
+        run: |
+          cat > .github/bulk-ops/configs/permission-templates.yml << 'EOF'
+          # Permission Templates Configuration
+          permission_levels:
+            strict:
+              description: "Strict security permissions"
+              default_dir: "750"
+              default_file: "640"
+              executable: "750"
+              config: "600"
+              logs: "640"
+              temp: "700"
+              public: "644"
+              secret: "600"
+              script: "750"
+          
+            standard:
+              description: "Standard balanced permissions"
+              default_dir: "755"
+              default_file: "644"
+              executable: "755"
+              config: "644"
+              logs: "664"
+              temp: "755"
+              public: "644"
+              secret: "600"
+              script: "755"
+          
+            permissive:
+              description: "Permissive development permissions"
+              default_dir: "775"
+              default_file: "664"
+              executable: "775"
+              config: "664"
+              logs: "666"
+              temp: "777"
+              public: "664"
+              secret: "600"
+              script: "775"
+          
+          # File type mappings
+          file_patterns:
+            executable:
+              - "*.sh"
+              - "*.py"
+              - "*.pl"
+              - "*.rb"
+              - "bin/*"
+              - "scripts/*"
+            config:
+              - "*.yml"
+              - "*.yaml"
+              - "*.json"
+              - "*.conf"
+              - "*.cfg"
+              - "*.ini"
+              - "config/*"
+            secret:
+              - "*.key"
+              - "*.pem"
+              - "*.p12"
+              - "*.jks"
+              - "*password*"
+              - "*secret*"
+              - ".env*"
+            public:
+              - "*.md"
+              - "*.txt"
+              - "*.html"
+              - "*.css"
+              - "*.js"
+              - "docs/*"
+              - "public/*"
+          EOF
+
+      - name: Create bulk directory operation script
+        run: |
+          cat > .github/bulk-ops/scripts/bulk-operations.py << 'EOF'
+          #!/usr/bin/env python3
+          """
+          Bulk Directory and Permission Management Script
+          """
+          
+          import os
+          import sys
+          import json
+          import yaml
+          import stat
+          from pathlib import Path
+          from datetime import datetime
+          import argparse
+          import logging
+          
+          # Setup logging
+          logging.basicConfig(
+              level=logging.INFO,
+              format='%(asctime)s - %(levelname)s - %(message)s',
+              handlers=[
+                  logging.FileHandler('.github/bulk-ops/logs/operations.log'),
+                  logging.StreamHandler(sys.stdout)
+              ]
+          )
+          logger = logging.getLogger(__name__)
+          
+          class BulkOperationsManager:
+              def __init__(self, dry_run=False):
+                  self.dry_run = dry_run
+                  self.base_path = Path.cwd()
+                  self.config_path = Path('.github/bulk-ops/configs')
+                  self.operation_log = []
+                  
+              def load_template_config(self):
+                  """Load directory templates configuration"""
+                  config_file = self.config_path / 'directory-templates.yml'
+                  try:
+                      with open(config_file, 'r') as f:
+                          return yaml.safe_load(f)
+                  except FileNotFoundError:
+                      logger.error(f"Template config not found: {config_file}")
+                      return {}
+                      
+              def load_permission_config(self):
+                  """Load permission templates configuration"""
+                  config_file = self.config_path / 'permission-templates.yml'
+                  try:
+                      with open(config_file, 'r') as f:
+                          return yaml.safe_load(f)
+                  except FileNotFoundError:
+                      logger.error(f"Permission config not found: {config_file}")
+                      return {}
+                      
+              def create_directories(self, template_name, custom_dirs=None):
+                  """Create directories based on template"""
+                  templates = self.load_template_config()
+                  
+                  if template_name not in templates.get('templates', {}):
+                      logger.error(f"Template '{template_name}' not found")
+                      return False
+                      
+                  template = templates['templates'][template_name]
+                  directories = template.get('directories', [])
+                  
+                  if custom_dirs:
+                      directories.extend(custom_dirs.split(','))
+                      
+                  logger.info(f"Creating directories for template: {template_name}")
+                  
+                  created_dirs = []
+                  for directory in directories:
+                      dir_path = self.base_path / directory.strip()
+                      
+                      if self.dry_run:
+                          logger.info(f"[DRY RUN] Would create directory: {dir_path}")
+                          created_dirs.append(str(dir_path))
+                      else:
+                          try:
+                              dir_path.mkdir(parents=True, exist_ok=True)
+                              logger.info(f"Created directory: {dir_path}")
+                              created_dirs.append(str(dir_path))
+                              
+                              # Create .gitkeep file for empty directories
+                              gitkeep_file = dir_path / '.gitkeep'
+                              if not any(dir_path.iterdir()):
+                                  gitkeep_file.touch()
+                                  
+                          except Exception as e:
+                              logger.error(f"Failed to create directory {dir_path}: {e}")
+                              
+                  self.operation_log.append({
+                      'operation': 'create_directories',
+                      'template': template_name,
+                      'created': created_dirs,
+                      'timestamp': datetime.now().isoformat()
+                  })
+                  
+                  return True
+                  
+              def apply_permissions(self, permission_level, target_dirs=None):
+                  """Apply permissions based on permission level"""
+                  permissions = self.load_permission_config()
+                  
+                  if permission_level not in permissions.get('permission_levels', {}):
+                      logger.error(f"Permission level '{permission_level}' not found")
+                      return False
+                      
+                  perm_config = permissions['permission_levels'][permission_level]
+                  file_patterns = permissions.get('file_patterns', {})
+                  
+                  logger.info(f"Applying permissions with level: {permission_level}")
+                  
+                  if target_dirs is None:
+                      target_dirs = ['.']
+                      
+                  for target_dir in target_dirs:
+                      self._apply_permissions_recursive(
+                          Path(target_dir), perm_config, file_patterns
+                      )
+                      
+                  self.operation_log.append({
+                      'operation': 'apply_permissions',
+                      'permission_level': permission_level,
+                      'target_dirs': target_dirs,
+                      'timestamp': datetime.now().isoformat()
+                  })
+                  
+                  return True
+                  
+              def _apply_permissions_recursive(self, path, perm_config, file_patterns):
+                  """Recursively apply permissions to files and directories"""
+                  if not path.exists():
+                      return
+                      
+                  for item in path.rglob('*'):
+                      if item.is_dir():
+                          perm = perm_config.get('default_dir', '755')
+                      else:
+                          perm = self._get_file_permission(item, perm_config, file_patterns)
+                          
+                      if self.dry_run:
+                          logger.info(f"[DRY RUN] Would set permission {perm} on: {item}")
+                      else:
+                          try:
+                              item.chmod(int(perm, 8))
+                              logger.debug(f"Set permission {perm} on: {item}")
+                          except Exception as e:
+                              logger.error(f"Failed to set permission on {item}: {e}")
+                              
+              def _get_file_permission(self, file_path, perm_config, file_patterns):
+                  """Determine appropriate permission for a file based on patterns"""
+                  file_str = str(file_path)
+                  
+                  # Check each pattern type
+                  for pattern_type, patterns in file_patterns.items():
+                      for pattern in patterns:
+                          if file_str.endswith(pattern.replace('*', '')) or \
+                             pattern.replace('*', '') in file_str:
+                              return perm_config.get(pattern_type, perm_config['default_file'])
+                              
+                  return perm_config['default_file']
+                  
+              def create_permission_files(self):
+                  """Create permission-related files (.gitattributes, .gitignore, etc.)"""
+                  logger.info("Creating permission and configuration files")
+                  
+                  # Create .gitattributes for line endings and file handling
+                  gitattributes_content = """
+          # Auto detect text files and perform LF normalization
+          * text=auto
+          
+          # Shell scripts should always use LF
+          *.sh text eol=lf
+          *.bash text eol=lf
+          
+          # Windows scripts should use CRLF
+          *.bat text eol=crlf
+          *.cmd text eol=crlf
+          *.ps1 text eol=crlf
+          
+          # Binary files
+          *.jar binary
+          *.war binary
+          *.ear binary
+          *.zip binary
+          *.tar.gz binary
+          *.tgz binary
+          
+          # Images
+          *.png binary
+          *.jpg binary
+          *.jpeg binary
+          *.gif binary
+          *.ico binary
+          *.svg text
+          
+          # Fonts
+          *.woff binary
+          *.woff2 binary
+          *.eot binary
+          *.ttf binary
+          *.otf binary
+          
+          # Documents
+          *.pdf binary
+          *.doc binary
+          *.docx binary
+          """
+          
+                  # Enhanced .gitignore
+                  gitignore_additions = """
+          
+          # Bulk Operations
+          .github/bulk-ops/logs/*.log
+          .github/bulk-ops/temp/*
+          !.github/bulk-ops/temp/.gitkeep
+          
+          # OS generated files
+          .DS_Store
+          .DS_Store?
+          ._*
+          .Spotlight-V100
+          .Trashes
+          ehthumbs.db
+          Thumbs.db
+          
+          # IDE files
+          .vscode/
+          .idea/
+          *.swp
+          *.swo
+          *~
+          
+          # Temporary files
+          *.tmp
+          *.temp
+          *.cache
+          
+          # Log files
+          *.log
+          logs/
+          
+          # Security files
+          *.key
+          *.pem
+          *.p12
+          *.jks
+          .env
+          .env.local
+          .env.*.local
+          """
+          
+                  if not self.dry_run:
+                      # Write .gitattributes
+                      with open('.gitattributes', 'w') as f:
+                          f.write(gitattributes_content.strip())
+                      logger.info("Created .gitattributes file")
+                      
+                      # Append to .gitignore
+                      with open('.gitignore', 'a') as f:
+                          f.write(gitignore_additions)
+                      logger.info("Updated .gitignore file")
+                      
+                      # Create CODEOWNERS file
+                      codeowners_content = """
+          # Global owners
+          * @davidkims
+          
+          # Docker files
+          Dockerfile* @davidkims
+          docker-compose*.yml @davidkims
+          .dockerignore @davidkims
+          
+          # GitHub workflows
+          .github/ @davidkims
+          
+          # Security files
+          *.key @davidkims
+          *.pem @davidkims
+          .env* @davidkims
+          """
+                      
+                      with open('.github/CODEOWNERS', 'w') as f:
+                          f.write(codeowners_content.strip())
+                      logger.info("Created .github/CODEOWNERS file")
+                  else:
+                      logger.info("[DRY RUN] Would create .gitattributes, update .gitignore, and create CODEOWNERS")
+                      
+                  self.operation_log.append({
+                      'operation': 'create_permission_files',
+                      'files': ['.gitattributes', '.gitignore', '.github/CODEOWNERS'],
+                      'timestamp': datetime.now().isoformat()
+                  })
+                  
+              def save_operation_log(self):
+                  """Save operation log to file"""
+                  log_file = Path('.github/bulk-ops/logs/operation-log.json')
+                  log_file.parent.mkdir(parents=True, exist_ok=True)
+                  
+                  if not self.dry_run:
+                      with open(log_file, 'w') as f:
+                          json.dump(self.operation_log, f, indent=2)
+                      logger.info(f"Operation log saved to: {log_file}")
+                  else:
+                      logger.info(f"[DRY RUN] Would save operation log to: {log_file}")
+          
+          def main():
+              parser = argparse.ArgumentParser(description='Bulk Directory and Permission Management')
+              parser.add_argument('operation', choices=['create-directories', 'create-permission-files', 'update-permissions', 'bulk-setup'])
+              parser.add_argument('--template', default='standard', help='Directory template')
+              parser.add_argument('--permission-level', default='standard', help='Permission level')
+              parser.add_argument('--custom-dirs', help='Custom directories (comma-separated)')
+              parser.add_argument('--dry-run', action='store_true', help='Dry run mode')
+              
+              args = parser.parse_args()
+              
+              manager = BulkOperationsManager(dry_run=args.dry_run)
+              
+              if args.operation == 'create-directories':
+                  manager.create_directories(args.template, args.custom_dirs)
+              elif args.operation == 'create-permission-files':
+                  manager.create_permission_files()
+              elif args.operation == 'update-permissions':
+                  manager.apply_permissions(args.permission_level)
+              elif args.operation == 'bulk-setup':
+                  # Perform all operations
+                  manager.create_directories(args.template, args.custom_dirs)
+                  manager.apply_permissions(args.permission_level)
+                  manager.create_permission_files()
+                  
+              manager.save_operation_log()
+              logger.info("Bulk operations completed successfully")
+          
+          if __name__ == '__main__':
+              main()
+          EOF
+          
+          chmod +x .github/bulk-ops/scripts/bulk-operations.py
+
+      - name: Run bulk operations
+        run: |
+          cd /home/runner/work/friendly-octo-lamp/friendly-octo-lamp
+          
+          python .github/bulk-ops/scripts/bulk-operations.py \
+            "${{ inputs.operation }}" \
+            --template "${{ inputs.directory_template }}" \
+            --permission-level "${{ inputs.permission_level }}" \
+            --custom-dirs "${{ inputs.custom_directories }}" \
+            ${{ inputs.dry_run == 'true' && '--dry-run' || '' }}
+
+      - name: Generate operation report
+        run: |
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          REPORT_FILE=".github/bulk-ops/logs/operation-report-$(date +%Y%m%d-%H%M).md"
+          
+          cat > "$REPORT_FILE" << EOF
+          # Bulk Directory and Permission Management Report
+          
+          **Generated:** $TIMESTAMP  
+          **Operation:** ${{ inputs.operation }}  
+          **Template:** ${{ inputs.directory_template }}  
+          **Permission Level:** ${{ inputs.permission_level }}  
+          **Dry Run:** ${{ inputs.dry_run }}  
+          
+          ## Operations Performed
+          
+          ### Directory Creation
+          $(if [ "${{ inputs.operation }}" = "create-directories" ] || [ "${{ inputs.operation }}" = "bulk-setup" ]; then
+            echo "✅ Directories created based on '${{ inputs.directory_template }}' template"
+            if [ -n "${{ inputs.custom_directories }}" ]; then
+              echo "✅ Custom directories added: ${{ inputs.custom_directories }}"
+            fi
+          else
+            echo "⏭️ Directory creation skipped"
+          fi)
+          
+          ### Permission Management
+          $(if [ "${{ inputs.operation }}" = "update-permissions" ] || [ "${{ inputs.operation }}" = "bulk-setup" ]; then
+            echo "✅ Permissions applied with '${{ inputs.permission_level }}' level"
+          else
+            echo "⏭️ Permission update skipped"
+          fi)
+          
+          ### Configuration Files
+          $(if [ "${{ inputs.operation }}" = "create-permission-files" ] || [ "${{ inputs.operation }}" = "bulk-setup" ]; then
+            echo "✅ Permission files created (.gitattributes, .gitignore, CODEOWNERS)"
+          else
+            echo "⏭️ Permission file creation skipped"
+          fi)
+          
+          ## Directory Structure Created
+          \`\`\`
+          $(find . -type d -name ".git" -prune -o -type d -print | head -50 | sort)
+          \`\`\`
+          
+          ## Files Summary
+          - **Total Directories:** \$(find . -type d | wc -l)
+          - **Total Files:** \$(find . -type f | wc -l)
+          - **Configuration Files:** \$(find . -name "*.yml" -o -name "*.yaml" -o -name "*.json" | wc -l)
+          - **Script Files:** \$(find . -name "*.sh" -o -name "*.py" | wc -l)
+          
+          ## Next Steps
+          1. Review created directory structure
+          2. Verify file permissions are appropriate
+          3. Update any project-specific configurations
+          4. Add content to newly created directories
+          5. Commit changes to version control
+          
+          ---
+          *Report generated by Bulk Directory and Permission Management workflow*
+          EOF
+          
+          echo "Operation report generated: $REPORT_FILE"
+
+      - name: Commit changes
+        if: ${{ inputs.dry_run != 'true' }}
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add .
+          
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "feat: bulk directory and permission management
+
+            Operation: ${{ inputs.operation }}
+            Template: ${{ inputs.directory_template }}
+            Permission Level: ${{ inputs.permission_level }}
+            Custom Directories: ${{ inputs.custom_directories }}
+            
+            - Created directory structure
+            - Applied appropriate permissions
+            - Generated configuration files
+            - Updated project organization
+            
+            Auto-generated by Bulk Directory Management workflow"
+            git push
+          fi
+
+      - name: Create summary comment
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const operation = '${{ inputs.operation }}';
+            const template = '${{ inputs.directory_template }}';
+            const permissionLevel = '${{ inputs.permission_level }}';
+            const dryRun = '${{ inputs.dry_run }}';
+            
+            const summary = `
+            ## 📁 Bulk Directory Management Summary
+            
+            **Operation:** \`${operation}\`
+            **Template:** \`${template}\`
+            **Permission Level:** \`${permissionLevel}\`
+            **Mode:** ${dryRun === 'true' ? '🔍 Dry Run (Preview)' : '✅ Executed'}
+            
+            ### Results
+            ${dryRun === 'true' ? 
+              '- Preview mode: No actual changes were made\n- Check workflow logs for detailed preview' :
+              '- Directory structure created successfully\n- Permissions applied\n- Configuration files updated'
+            }
+            
+            ### Files Generated
+            - Directory templates and configurations
+            - Permission management scripts
+            - Operation logs and reports
+            - Enhanced .gitignore and .gitattributes
+            - CODEOWNERS file for repository governance
+            
+            View the detailed operation report in \`.github/bulk-ops/logs/\` for complete information.
+            `;
+            
+            // If this was triggered by workflow_dispatch, we might want to comment on a related PR or issue
+            console.log(summary);
