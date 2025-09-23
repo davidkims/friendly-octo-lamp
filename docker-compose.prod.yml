@@ -1,0 +1,134 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: friendly-octo-lamp:prod
+    container_name: friendly-octo-lamp-app-prod
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - app_logs:/app/logs
+    networks:
+      - app-network
+    restart: always
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+    labels:
+      - "com.friendly-octo-lamp.description=Main application container - Production"
+      - "com.friendly-octo-lamp.version=1.0.0"
+      - "com.friendly-octo-lamp.environment=production"
+
+  redis:
+    image: redis:7-alpine
+    container_name: friendly-octo-lamp-redis-prod
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/etc/redis/redis.conf:ro
+    networks:
+      - app-network
+    restart: always
+    command: redis-server /etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 64M
+    labels:
+      - "com.friendly-octo-lamp.description=Redis cache container - Production"
+
+  nginx:
+    image: nginx:alpine
+    container_name: friendly-octo-lamp-nginx-prod
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    networks:
+      - app-network
+    restart: always
+    depends_on:
+      app:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+        reservations:
+          cpus: '0.1'
+          memory: 32M
+    labels:
+      - "com.friendly-octo-lamp.description=Nginx reverse proxy - Production"
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: friendly-octo-lamp-watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=86400
+      - WATCHTOWER_LABEL_ENABLE=true
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.friendly-octo-lamp.description=Auto-updater for containers"
+
+volumes:
+  redis_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/friendly-octo-lamp/data/redis
+  app_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/friendly-octo-lamp/logs
+  nginx_logs:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /opt/friendly-octo-lamp/logs/nginx
+
+networks:
+  app-network:
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.name: friendly-octo-lamp-br
+    labels:
+      - "com.friendly-octo-lamp.description=Production application network"
