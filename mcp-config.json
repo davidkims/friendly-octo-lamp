@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "friendly-octo-lamp": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "cwd": "."
+    }
+  }
+}
