@@ -1,0 +1,80 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: friendly-octo-lamp:latest
+    container_name: friendly-octo-lamp-app
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - app_logs:/app/logs
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    depends_on:
+      - redis
+    labels:
+      - "com.friendly-octo-lamp.description=Main application container"
+      - "com.friendly-octo-lamp.version=1.0.0"
+
+  redis:
+    image: redis:7-alpine
+    container_name: friendly-octo-lamp-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - app-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    labels:
+      - "com.friendly-octo-lamp.description=Redis cache container"
+
+  nginx:
+    image: nginx:alpine
+    container_name: friendly-octo-lamp-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_logs:/var/log/nginx
+    networks:
+      - app-network
+    restart: unless-stopped
+    depends_on:
+      - app
+    labels:
+      - "com.friendly-octo-lamp.description=Nginx reverse proxy"
+
+volumes:
+  redis_data:
+    driver: local
+  app_logs:
+    driver: local
+  nginx_logs:
+    driver: local
+
+networks:
+  app-network:
+    driver: bridge
+    labels:
+      - "com.friendly-octo-lamp.description=Application network"
