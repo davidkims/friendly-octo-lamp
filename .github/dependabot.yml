@@ -1,0 +1,53 @@
+# Dependabot configuration for automatic dependency updates
+# Monitors Java (Maven/Gradle) and Docker dependencies
+# Updates are scheduled weekly with appropriate reviewers assigned
+
+version: 2
+updates:
+  # Java ecosystem - Maven
+  - package-ecosystem: "maven"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
+    commit-message:
+      prefix: "maven"
+      include: "scope"
+
+  # Java ecosystem - Gradle  
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
+    commit-message:
+      prefix: "gradle"
+      include: "scope"
+
+  # Docker ecosystem
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
