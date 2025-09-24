@@ -1,0 +1,619 @@
+name: "CodeQL Security Analysis with Dependabot Integration"
+
+on:
+  push:
+    branches: [ "main", "master", "develop", "dev" ]
+  pull_request:
+    branches: [ "main", "master", "develop", "dev" ]
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly on Monday at 6 AM UTC
+  workflow_dispatch:
+    inputs:
+      languages:
+        description: 'Languages to analyze (comma-separated)'
+        required: false
+        type: string
+        default: 'javascript,typescript,python,java,csharp,cpp,go,ruby'
+      security_level:
+        description: 'Security analysis level'
+        required: false
+        type: choice
+        options: ['standard', 'extended', 'comprehensive']
+        default: 'comprehensive'
+      create_issues:
+        description: 'Create issues for security findings'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  actions: read
+  contents: read
+  security-events: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  # Language detection and setup
+  detect-languages:
+    name: "Detect Project Languages"
+    runs-on: ubuntu-latest
+    outputs:
+      languages: ${{ steps.detect.outputs.languages }}
+      has-code: ${{ steps.detect.outputs.has-code }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect languages and setup matrix
+        id: detect
+        run: |
+          echo "Detecting languages in repository..."
+          
+          # Initialize languages array
+          languages=()
+          
+          # Check for different language files
+          if find . -name "*.js" -o -name "*.jsx" -o -name "*.mjs" -o -name "*.ts" -o -name "*.tsx" -o -name "package.json" | head -1 | grep -q .; then
+            languages+=("javascript")
+          fi
+          
+          if find . -name "*.py" -o -name "requirements.txt" -o -name "pyproject.toml" -o -name "setup.py" | head -1 | grep -q .; then
+            languages+=("python")
+          fi
+          
+          if find . -name "*.java" -o -name "pom.xml" -o -name "build.gradle" -o -name "gradlew" | head -1 | grep -q .; then
+            languages+=("java")
+          fi
+          
+          if find . -name "*.cs" -o -name "*.csproj" -o -name "*.sln" | head -1 | grep -q .; then
+            languages+=("csharp")
+          fi
+          
+          if find . -name "*.cpp" -o -name "*.cxx" -o -name "*.c" -o -name "*.h" -o -name "CMakeLists.txt" -o -name "Makefile" | head -1 | grep -q .; then
+            languages+=("cpp")
+          fi
+          
+          if find . -name "*.go" -o -name "go.mod" -o -name "go.sum" | head -1 | grep -q .; then
+            languages+=("go")
+          fi
+          
+          if find . -name "*.rb" -o -name "Gemfile" -o -name "Rakefile" | head -1 | grep -q .; then
+            languages+=("ruby")
+          fi
+          
+          # Handle manual input override
+          if [ -n "${{ inputs.languages }}" ]; then
+            echo "Using manually specified languages: ${{ inputs.languages }}"
+            IFS=',' read -ra MANUAL_LANGS <<< "${{ inputs.languages }}"
+            languages=("${MANUAL_LANGS[@]}")
+          fi
+          
+          # Convert to JSON array
+          if [ ${#languages[@]} -eq 0 ]; then
+            echo "languages=[]" >> $GITHUB_OUTPUT
+            echo "has-code=false" >> $GITHUB_OUTPUT
+            echo "No supported languages detected"
+          else
+            # Remove duplicates and convert to JSON
+            printf -v joined '%s,' "${languages[@]}"
+            json_array="[\"${joined%,}\"]"
+            json_array=$(echo "$json_array" | sed 's/,/","/g')
+            
+            echo "languages=$json_array" >> $GITHUB_OUTPUT
+            echo "has-code=true" >> $GITHUB_OUTPUT
+            echo "Detected languages: ${languages[*]}"
+          fi
+
+  # Main CodeQL analysis
+  codeql-analysis:
+    name: "CodeQL Analysis"
+    runs-on: ubuntu-latest
+    needs: detect-languages
+    if: needs.detect-languages.outputs.has-code == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ${{ fromJSON(needs.detect-languages.outputs.languages) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          config: |
+            name: "CodeQL Security Config"
+            disable-default-queries: false
+            queries:
+              - uses: security-and-quality
+              - uses: security-extended
+            query-filters:
+              - exclude:
+                  id: 
+                    - js/unclear-validation
+                    - py/clear-text-logging-sensitive-data
+            paths-ignore:
+              - "node_modules"
+              - "vendor"
+              - "dist"
+              - "build"
+              - "__pycache__"
+              - "*.min.js"
+              - "test"
+              - "tests"
+              - "spec"
+
+      - name: Setup language-specific dependencies
+        run: |
+          case ${{ matrix.language }} in
+            "javascript"|"typescript")
+              if [ -f "package.json" ]; then
+                echo "Installing Node.js dependencies..."
+                npm ci --only=production || npm install --only=production || true
+              fi
+              ;;
+            "python")
+              if [ -f "requirements.txt" ]; then
+                echo "Installing Python dependencies..."
+                python -m pip install --upgrade pip
+                pip install -r requirements.txt || true
+              elif [ -f "pyproject.toml" ]; then
+                pip install . || true
+              fi
+              ;;
+            "java")
+              if [ -f "pom.xml" ]; then
+                echo "Building Java project with Maven..."
+                mvn compile -DskipTests || true
+              elif [ -f "build.gradle" ]; then
+                echo "Building Java project with Gradle..."
+                ./gradlew compileJava || gradle compileJava || true
+              fi
+              ;;
+            "go")
+              if [ -f "go.mod" ]; then
+                echo "Building Go project..."
+                go mod download || true
+                go build ./... || true
+              fi
+              ;;
+            "csharp")
+              if find . -name "*.csproj" -o -name "*.sln" | head -1 | grep -q .; then
+                echo "Building .NET project..."
+                dotnet restore || true
+                dotnet build --no-restore || true
+              fi
+              ;;
+            "cpp")
+              echo "Setting up C++ environment..."
+              # Most C++ projects will be analyzed without explicit build
+              ;;
+            "ruby")
+              if [ -f "Gemfile" ]; then
+                echo "Installing Ruby gems..."
+                bundle install || true
+              fi
+              ;;
+          esac
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
+          upload: true
+          wait-for-processing: true
+
+  # Dependabot integration and validation
+  dependabot-integration:
+    name: "Integrate with Dependabot Findings"
+    runs-on: ubuntu-latest
+    needs: [detect-languages, codeql-analysis]
+    if: always() && needs.detect-languages.outputs.has-code == 'true'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python for analysis scripts
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install analysis dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pyyaml jq-cli github-to-sqlite
+
+      - name: Create security validation script
+        run: |
+          mkdir -p .github/security-tools
+          cat > .github/security-tools/validate-security.py << 'EOF'
+          #!/usr/bin/env python3
+          """
+          Security validation script that integrates CodeQL and Dependabot findings
+          """
+          import json
+          import os
+          import sys
+          import subprocess
+          from datetime import datetime, timedelta
+          from typing import Dict, List, Any
+          
+          class SecurityValidator:
+              def __init__(self):
+                  self.github_token = os.environ.get('GITHUB_TOKEN')
+                  self.repo = os.environ.get('GITHUB_REPOSITORY')
+                  self.findings = {
+                      'codeql': [],
+                      'dependabot': [],
+                      'summary': {
+                          'total_issues': 0,
+                          'critical': 0,
+                          'high': 0,
+                          'medium': 0,
+                          'low': 0,
+                          'last_updated': datetime.utcnow().isoformat()
+                      }
+                  }
+          
+              def fetch_codeql_alerts(self):
+                  """Fetch CodeQL security alerts"""
+                  if not self.github_token or not self.repo:
+                      print("Missing GitHub token or repository information")
+                      return
+                  
+                  print("Fetching CodeQL alerts...")
+                  try:
+                      cmd = [
+                          'curl', '-s', '-H', f'Authorization: token {self.github_token}',
+                          f'https://api.github.com/repos/{self.repo}/code-scanning/alerts'
+                      ]
+                      result = subprocess.run(cmd, capture_output=True, text=True)
+                      if result.returncode == 0:
+                          alerts = json.loads(result.stdout)
+                          for alert in alerts:
+                              if alert.get('state') == 'open':
+                                  self.findings['codeql'].append({
+                                      'number': alert.get('number'),
+                                      'rule_id': alert.get('rule', {}).get('id'),
+                                      'rule_description': alert.get('rule', {}).get('description'),
+                                      'severity': alert.get('rule', {}).get('severity'),
+                                      'location': f"{alert.get('most_recent_instance', {}).get('location', {}).get('path')}:{alert.get('most_recent_instance', {}).get('location', {}).get('start_line')}",
+                                      'created_at': alert.get('created_at'),
+                                      'url': alert.get('html_url')
+                                  })
+                                  # Update severity counts
+                                  severity = alert.get('rule', {}).get('severity', 'low').lower()
+                                  if severity in self.findings['summary']:
+                                      self.findings['summary'][severity] += 1
+                  except Exception as e:
+                      print(f"Error fetching CodeQL alerts: {e}")
+          
+              def fetch_dependabot_alerts(self):
+                  """Fetch Dependabot security alerts"""
+                  if not self.github_token or not self.repo:
+                      return
+                      
+                  print("Fetching Dependabot alerts...")
+                  try:
+                      cmd = [
+                          'curl', '-s', '-H', f'Authorization: token {self.github_token}',
+                          f'https://api.github.com/repos/{self.repo}/dependabot/alerts'
+                      ]
+                      result = subprocess.run(cmd, capture_output=True, text=True)
+                      if result.returncode == 0:
+                          alerts = json.loads(result.stdout)
+                          for alert in alerts:
+                              if alert.get('state') == 'open':
+                                  self.findings['dependabot'].append({
+                                      'number': alert.get('number'),
+                                      'package': alert.get('dependency', {}).get('package', {}).get('name'),
+                                      'vulnerability': alert.get('security_advisory', {}).get('summary'),
+                                      'severity': alert.get('security_advisory', {}).get('severity'),
+                                      'created_at': alert.get('created_at'),
+                                      'url': alert.get('html_url')
+                                  })
+                                  # Update severity counts
+                                  severity = alert.get('security_advisory', {}).get('severity', 'low').lower()
+                                  if severity in self.findings['summary']:
+                                      self.findings['summary'][severity] += 1
+                  except Exception as e:
+                      print(f"Error fetching Dependabot alerts: {e}")
+          
+              def validate_workflow_security(self):
+                  """Validate workflow files for security best practices"""
+                  print("Validating workflow security...")
+                  workflow_issues = []
+                  
+                  workflows_dir = '.github/workflows'
+                  if os.path.exists(workflows_dir):
+                      for filename in os.listdir(workflows_dir):
+                          if filename.endswith(('.yml', '.yaml')):
+                              filepath = os.path.join(workflows_dir, filename)
+                              with open(filepath, 'r') as f:
+                                  content = f.read()
+                                  
+                              # Check for security issues
+                              issues = []
+                              if 'pull_request_target' in content and 'checkout@' in content:
+                                  issues.append("Potentially unsafe pull_request_target with checkout")
+                              
+                              if '${{ github.event.pull_request.head.repo.full_name }}' in content:
+                                  issues.append("Using untrusted PR head repo name")
+                              
+                              if 'run:' in content and any(danger in content.lower() for danger in ['curl', 'wget', 'eval', 'bash -c']):
+                                  issues.append("Potentially dangerous shell commands")
+                              
+                              if issues:
+                                  workflow_issues.append({
+                                      'file': filename,
+                                      'issues': issues
+                                  })
+                  
+                  if workflow_issues:
+                      self.findings['workflow_security'] = workflow_issues
+          
+              def generate_report(self):
+                  """Generate comprehensive security report"""
+                  total_issues = len(self.findings['codeql']) + len(self.findings['dependabot'])
+                  self.findings['summary']['total_issues'] = total_issues
+                  
+                  print(f"\n{'='*60}")
+                  print(f"SECURITY ANALYSIS REPORT")
+                  print(f"{'='*60}")
+                  print(f"Total Issues: {total_issues}")
+                  print(f"  Critical: {self.findings['summary']['critical']}")
+                  print(f"  High: {self.findings['summary']['high']}")
+                  print(f"  Medium: {self.findings['summary']['medium']}")
+                  print(f"  Low: {self.findings['summary']['low']}")
+                  
+                  if self.findings['codeql']:
+                      print(f"\nCodeQL Findings ({len(self.findings['codeql'])}):")
+                      for finding in self.findings['codeql']:
+                          print(f"  - {finding['rule_id']}: {finding['location']} ({finding['severity']})")
+                  
+                  if self.findings['dependabot']:
+                      print(f"\nDependabot Findings ({len(self.findings['dependabot'])}):")
+                      for finding in self.findings['dependabot']:
+                          print(f"  - {finding['package']}: {finding['vulnerability']} ({finding['severity']})")
+                  
+                  if self.findings.get('workflow_security'):
+                      print(f"\nWorkflow Security Issues:")
+                      for item in self.findings['workflow_security']:
+                          print(f"  - {item['file']}: {', '.join(item['issues'])}")
+                  
+                  # Save detailed report
+                  os.makedirs('security-reports', exist_ok=True)
+                  with open('security-reports/security-analysis.json', 'w') as f:
+                      json.dump(self.findings, f, indent=2)
+                  
+                  print(f"\nDetailed report saved to: security-reports/security-analysis.json")
+                  
+                  # Return exit code based on critical/high issues
+                  critical_high = self.findings['summary']['critical'] + self.findings['summary']['high']
+                  return 1 if critical_high > 0 else 0
+          
+              def run(self):
+                  """Run complete security validation"""
+                  print("Starting comprehensive security validation...")
+                  
+                  self.fetch_codeql_alerts()
+                  self.fetch_dependabot_alerts()
+                  self.validate_workflow_security()
+                  
+                  exit_code = self.generate_report()
+                  return exit_code
+          
+          if __name__ == '__main__':
+              validator = SecurityValidator()
+              sys.exit(validator.run())
+          EOF
+          chmod +x .github/security-tools/validate-security.py
+
+      - name: Run security validation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          python .github/security-tools/validate-security.py
+        continue-on-error: true
+
+      - name: Create security dashboard
+        run: |
+          cat > .github/security-tools/security-dashboard.md << 'EOF'
+          # Security Dashboard
+          
+          This dashboard provides an overview of security findings across the repository.
+          
+          ## Automated Security Checks
+          
+          ### CodeQL Analysis
+          - **Languages Analyzed**: JavaScript/TypeScript, Python, Java, C#, C++, Go, Ruby
+          - **Query Sets**: Security and Quality, Security Extended
+          - **Schedule**: Weekly on Mondays, on push/PR to main branches
+          
+          ### Dependabot Integration
+          - **Package Ecosystems**: Maven, Docker, npm (configurable)
+          - **Update Schedule**: Weekly
+          - **Security Advisories**: Automatic monitoring
+          
+          ### Workflow Security Validation
+          - Validates GitHub Actions workflows for security best practices
+          - Checks for potentially unsafe patterns
+          - Reports on pull_request_target usage and other security concerns
+          
+          ## Security Report Location
+          
+          Latest security reports are available in the `security-reports/` directory after each workflow run.
+          
+          ## Configuration
+          
+          Security analysis can be customized through workflow dispatch inputs:
+          - **Languages**: Specify which languages to analyze
+          - **Security Level**: Choose from standard, extended, or comprehensive
+          - **Create Issues**: Automatically create issues for security findings
+          
+          ## Best Practices
+          
+          1. **Regular Updates**: Keep dependencies updated through Dependabot
+          2. **Code Review**: All security-related PRs should be carefully reviewed
+          3. **Branch Protection**: Ensure main branches require status checks
+          4. **Secret Management**: Use GitHub Secrets for sensitive information
+          5. **Least Privilege**: Workflows should use minimal required permissions
+          
+          EOF
+
+      - name: Upload security reports as artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: security-reports/
+          retention-days: 30
+
+  # Create issues for critical findings (if enabled)
+  create-security-issues:
+    name: "Create Security Issues"
+    runs-on: ubuntu-latest
+    needs: [dependabot-integration]
+    if: always() && github.event.inputs.create_issues == 'true'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Download security reports
+        uses: actions/download-artifact@v4
+        with:
+          name: security-reports
+          path: security-reports/
+
+      - name: Create issues for critical findings
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f "security-reports/security-analysis.json" ]; then
+            echo "Processing security findings for issue creation..."
+            
+            # Create script to parse findings and create issues
+            cat > create-security-issues.py << 'EOF'
+          import json
+          import os
+          import subprocess
+          import sys
+          
+          def create_issue(title, body, labels):
+              cmd = [
+                  'gh', 'issue', 'create',
+                  '--title', title,
+                  '--body', body,
+                  '--label', ','.join(labels)
+              ]
+              try:
+                  result = subprocess.run(cmd, capture_output=True, text=True)
+                  if result.returncode == 0:
+                      print(f"Created issue: {title}")
+                  else:
+                      print(f"Failed to create issue: {result.stderr}")
+              except Exception as e:
+                  print(f"Error creating issue: {e}")
+          
+          def main():
+              if not os.path.exists('security-reports/security-analysis.json'):
+                  print("No security analysis report found")
+                  return
+              
+              with open('security-reports/security-analysis.json', 'r') as f:
+                  findings = json.load(f)
+              
+              # Create issues for critical and high severity findings
+              for finding in findings.get('codeql', []):
+                  severity = finding.get('severity', 'low').lower()
+                  if severity in ['critical', 'high']:
+                      title = f"🚨 CodeQL Security Alert: {finding.get('rule_id')}"
+                      body = f"""
+          ## Security Alert Details
+          
+          **Rule ID**: {finding.get('rule_id')}
+          **Severity**: {finding.get('severity')}
+          **Description**: {finding.get('rule_description')}
+          **Location**: {finding.get('location')}
+          **Created**: {finding.get('created_at')}
+          
+          **Alert URL**: {finding.get('url')}
+          
+          ## Recommended Actions
+          
+          1. Review the code at the specified location
+          2. Apply the recommended fix for this security vulnerability
+          3. Test the changes thoroughly
+          4. Mark the alert as fixed once resolved
+          
+          This issue was automatically created by the security validation workflow.
+          """
+                      create_issue(title, body, ['security', 'codeql', severity])
+              
+              for finding in findings.get('dependabot', []):
+                  severity = finding.get('severity', 'low').lower()
+                  if severity in ['critical', 'high']:
+                      title = f"🔒 Dependabot Security Alert: {finding.get('package')}"
+                      body = f"""
+          ## Dependency Security Alert
+          
+          **Package**: {finding.get('package')}
+          **Severity**: {finding.get('severity')}
+          **Vulnerability**: {finding.get('vulnerability')}
+          **Created**: {finding.get('created_at')}
+          
+          **Alert URL**: {finding.get('url')}
+          
+          ## Recommended Actions
+          
+          1. Update the vulnerable dependency to a patched version
+          2. Review the security advisory for detailed information
+          3. Test your application with the updated dependency
+          4. Consider alternative packages if no patch is available
+          
+          This issue was automatically created by the security validation workflow.
+          """
+                      create_issue(title, body, ['security', 'dependabot', 'dependencies', severity])
+          
+          if __name__ == '__main__':
+              main()
+          EOF
+          
+            python create-security-issues.py
+          fi
+
+  # Summary and notification
+  security-summary:
+    name: "Security Analysis Summary"
+    runs-on: ubuntu-latest
+    needs: [detect-languages, codeql-analysis, dependabot-integration]
+    if: always()
+    
+    steps:
+      - name: Summary of security analysis
+        run: |
+          echo "## Security Analysis Complete 🛡️" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Analysis Results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Languages Detected**: ${{ needs.detect-languages.outputs.languages }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **CodeQL Analysis**: ${{ needs.codeql-analysis.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Dependabot Integration**: ${{ needs.dependabot-integration.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Security Level**: ${{ github.event.inputs.security_level || 'comprehensive' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Review any security alerts in the Security tab" >> $GITHUB_STEP_SUMMARY
+          echo "2. Check Dependabot alerts for dependency vulnerabilities" >> $GITHUB_STEP_SUMMARY
+          echo "3. Download security reports from workflow artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "4. Address any critical or high severity findings" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "_This analysis runs automatically on push/PR and weekly._" >> $GITHUB_STEP_SUMMARY

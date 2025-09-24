@@ -1,18 +1,201 @@
 version: 2
 updates:
+  # Java/Maven dependencies
   - package-ecosystem: "maven"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "06:00"
     open-pull-requests-limit: 10
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
     labels:
       - "dependencies"
       - "java"
+      - "security"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # Docker dependencies
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "06:00"
     open-pull-requests-limit: 10
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
     labels:
       - "dependencies"
       - "docker"
+      - "security"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # Node.js/npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
+    labels:
+      - "dependencies"
+      - "javascript"
+      - "security"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # Python pip dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
+    labels:
+      - "dependencies"
+      - "python"
+      - "security"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # Gradle dependencies
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
+    labels:
+      - "dependencies"
+      - "java"
+      - "security"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # NuGet dependencies (.NET)
+  - package-ecosystem: "nuget"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
+    labels:
+      - "dependencies"
+      - "dotnet"
+      - "security"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # Go modules
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
+    labels:
+      - "dependencies"
+      - "go"
+      - "security"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # Ruby gems
+  - package-ecosystem: "bundler"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
+    labels:
+      - "dependencies"
+      - "ruby"
+      - "security"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
+    labels:
+      - "dependencies"
+      - "github-actions"
+      - "security"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # Composer dependencies (PHP)
+  - package-ecosystem: "composer"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
+    labels:
+      - "dependencies"
+      - "php"
+      - "security"
+    commit-message:
+      prefix: "deps"
+      include: "scope"

@@ -1,0 +1,16 @@
+# Python requirements for security demo
+flask==2.3.3
+requests==2.31.0
+cryptography==41.0.4
+pyyaml==6.0.1
+python-dotenv==1.0.0
+
+# Security scanning tools
+bandit==1.7.5
+safety==2.3.4
+
+# Development tools
+pytest==7.4.0
+pytest-cov==4.1.0
+black==23.7.0
+flake8==6.0.0

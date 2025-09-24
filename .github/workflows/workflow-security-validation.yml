@@ -1,0 +1,441 @@
+name: "Workflow Security Validation"
+
+on:
+  push:
+    paths:
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+  schedule:
+    - cron: '0 8 * * *'  # Daily at 8 AM UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  pull-requests: write
+  checks: write
+
+jobs:
+  validate-workflows:
+    name: "Validate Workflow Security"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml requests
+
+      - name: Create workflow security validator
+        run: |
+          mkdir -p .github/security-tools
+          cat > .github/security-tools/workflow-validator.py << 'EOF'
+          #!/usr/bin/env python3
+          """
+          Workflow Security Validator
+          Ensures all workflows include proper security measures and CodeQL integration
+          """
+          
+          import os
+          import yaml
+          import sys
+          import re
+          from pathlib import Path
+          from typing import Dict, List, Tuple
+          
+          class WorkflowValidator:
+              def __init__(self):
+                  self.workflows_dir = Path('.github/workflows')
+                  self.violations = []
+                  self.recommendations = []
+                  
+              def check_permissions(self, workflow_data: Dict, filename: str) -> List[str]:
+                  """Check if workflow has appropriate permissions"""
+                  issues = []
+                  permissions = workflow_data.get('permissions')
+                  
+                  if not permissions:
+                      issues.append(f"{filename}: Missing permissions block - should use least privilege")
+                      return issues
+                  
+                  # Check for overly broad permissions
+                  if permissions == 'write-all' or permissions == 'read-all':
+                      issues.append(f"{filename}: Using overly broad permissions")
+                  
+                  # Check for specific dangerous permissions without justification
+                  dangerous_perms = ['actions: write', 'contents: write']
+                  if isinstance(permissions, dict):
+                      for perm, access in permissions.items():
+                          if access == 'write' and perm in ['actions', 'contents']:
+                              # This might be OK in some contexts, but flag for review
+                              self.recommendations.append(f"{filename}: Review necessity of '{perm}: write' permission")
+                  
+                  return issues
+              
+              def check_pull_request_target(self, workflow_data: Dict, filename: str) -> List[str]:
+                  """Check for unsafe pull_request_target usage"""
+                  issues = []
+                  
+                  on_events = workflow_data.get('on', {})
+                  if 'pull_request_target' in on_events:
+                      # Check if there's a checkout action
+                      jobs = workflow_data.get('jobs', {})
+                      for job_name, job_data in jobs.items():
+                          steps = job_data.get('steps', [])
+                          for step in steps:
+                              uses = step.get('uses', '')
+                              if 'actions/checkout' in uses:
+                                  # Check if it's checking out the PR head
+                                  with_data = step.get('with', {})
+                                  ref = with_data.get('ref', '')
+                                  if 'github.event.pull_request.head' in ref:
+                                      issues.append(f"{filename}: Unsafe pull_request_target with PR head checkout")
+                  
+                  return issues
+              
+              def check_script_injection(self, workflow_data: Dict, filename: str) -> List[str]:
+                  """Check for potential script injection vulnerabilities"""
+                  issues = []
+                  
+                  def check_run_command(command: str, step_name: str = ""):
+                      # Check for direct use of untrusted input in shell commands
+                      dangerous_patterns = [
+                          r'\$\{\{\s*github\.event\.pull_request\.title\s*\}\}',
+                          r'\$\{\{\s*github\.event\.pull_request\.body\s*\}\}',
+                          r'\$\{\{\s*github\.event\.comment\.body\s*\}\}',
+                          r'\$\{\{\s*github\.event\.issue\.title\s*\}\}',
+                          r'\$\{\{\s*github\.event\.issue\.body\s*\}\}',
+                      ]
+                      
+                      for pattern in dangerous_patterns:
+                          if re.search(pattern, command):
+                              issues.append(f"{filename}: Potential script injection in {step_name or 'run command'}")
+                              break
+                  
+                  # Check all jobs and steps
+                  jobs = workflow_data.get('jobs', {})
+                  for job_name, job_data in jobs.items():
+                      steps = job_data.get('steps', [])
+                      for i, step in enumerate(steps):
+                          step_name = step.get('name', f"step {i+1}")
+                          
+                          # Check run commands
+                          if 'run' in step:
+                              check_run_command(step['run'], step_name)
+                          
+                          # Check environment variables
+                          env = step.get('env', {})
+                          for env_name, env_value in env.items():
+                              if isinstance(env_value, str):
+                                  check_run_command(env_value, f"{step_name} env var {env_name}")
+                  
+                  return issues
+              
+              def check_security_integrations(self, workflow_data: Dict, filename: str) -> List[str]:
+                  """Check if workflow includes security analysis steps"""
+                  recommendations = []
+                  
+                  # Skip checking the security workflows themselves
+                  if 'security' in filename.lower() or 'codeql' in filename.lower():
+                      return recommendations
+                  
+                  jobs = workflow_data.get('jobs', {})
+                  has_security_steps = False
+                  
+                  for job_name, job_data in jobs.items():
+                      steps = job_data.get('steps', [])
+                      for step in steps:
+                          uses = step.get('uses', '')
+                          if any(security_action in uses for security_action in [
+                              'github/codeql-action',
+                              'securecodewarrior/github-action-add-sarif',
+                              'security',
+                              'dependabot'
+                          ]):
+                              has_security_steps = True
+                              break
+                      
+                      if has_security_steps:
+                          break
+                  
+                  if not has_security_steps and filename != 'workflow-security-validation.yml':
+                      # Check if this is a substantial workflow (not just a simple utility)
+                      total_steps = sum(len(job_data.get('steps', [])) for job_data in jobs.values())
+                      if total_steps > 3:  # Only recommend for substantial workflows
+                          recommendations.append(f"{filename}: Consider integrating security scanning steps")
+                  
+                  return recommendations
+              
+              def check_hardcoded_secrets(self, workflow_data: Dict, filename: str) -> List[str]:
+                  """Check for hardcoded secrets or tokens"""
+                  issues = []
+                  
+                  # Convert workflow to string for pattern matching
+                  workflow_str = yaml.dump(workflow_data)
+                  
+                  # Patterns that might indicate hardcoded secrets
+                  secret_patterns = [
+                      r'(?i)(password|token|key|secret)\s*[:=]\s*["\']?[a-zA-Z0-9+/]{20,}["\']?',
+                      r'["\'][a-zA-Z0-9]{32,}["\']',  # Long hex strings
+                      r'ghp_[a-zA-Z0-9]{36}',  # GitHub personal access tokens
+                      r'sk-[a-zA-Z0-9]{48}',   # OpenAI API keys (example)
+                  ]
+                  
+                  for pattern in secret_patterns:
+                      matches = re.findall(pattern, workflow_str)
+                      if matches:
+                          # Exclude obvious false positives
+                          false_positives = ['secrets.', '${{', 'example', 'placeholder', 'your-']
+                          for match in matches:
+                              if not any(fp in match.lower() for fp in false_positives):
+                                  issues.append(f"{filename}: Potential hardcoded secret detected")
+                                  break
+                  
+                  return issues
+              
+              def validate_workflow_file(self, filepath: Path) -> Tuple[List[str], List[str]]:
+                  """Validate a single workflow file"""
+                  filename = filepath.name
+                  issues = []
+                  recommendations = []
+                  
+                  try:
+                      with open(filepath, 'r', encoding='utf-8') as f:
+                          workflow_data = yaml.safe_load(f)
+                      
+                      if not workflow_data:
+                          issues.append(f"{filename}: Empty or invalid YAML")
+                          return issues, recommendations
+                      
+                      # Run all checks
+                      issues.extend(self.check_permissions(workflow_data, filename))
+                      issues.extend(self.check_pull_request_target(workflow_data, filename))
+                      issues.extend(self.check_script_injection(workflow_data, filename))
+                      issues.extend(self.check_hardcoded_secrets(workflow_data, filename))
+                      
+                      recommendations.extend(self.check_security_integrations(workflow_data, filename))
+                      
+                  except yaml.YAMLError as e:
+                      issues.append(f"{filename}: YAML parsing error - {e}")
+                  except Exception as e:
+                      issues.append(f"{filename}: Validation error - {e}")
+                  
+                  return issues, recommendations
+              
+              def validate_all_workflows(self) -> bool:
+                  """Validate all workflow files"""
+                  print(f"Validating workflows in {self.workflows_dir}")
+                  
+                  if not self.workflows_dir.exists():
+                      print("No workflows directory found")
+                      return True
+                  
+                  workflow_files = list(self.workflows_dir.glob('*.yml')) + list(self.workflows_dir.glob('*.yaml'))
+                  
+                  if not workflow_files:
+                      print("No workflow files found")
+                      return True
+                  
+                  print(f"Found {len(workflow_files)} workflow files")
+                  
+                  all_issues = []
+                  all_recommendations = []
+                  
+                  for filepath in workflow_files:
+                      issues, recommendations = self.validate_workflow_file(filepath)
+                      all_issues.extend(issues)
+                      all_recommendations.extend(recommendations)
+                  
+                  # Store results
+                  self.violations = all_issues
+                  self.recommendations = all_recommendations
+                  
+                  # Print results
+                  if all_issues:
+                      print(f"\n❌ Security Issues Found ({len(all_issues)}):")
+                      for issue in all_issues:
+                          print(f"  - {issue}")
+                  
+                  if all_recommendations:
+                      print(f"\n💡 Recommendations ({len(all_recommendations)}):")
+                      for rec in all_recommendations:
+                          print(f"  - {rec}")
+                  
+                  if not all_issues and not all_recommendations:
+                      print("\n✅ All workflows passed security validation!")
+                  
+                  # Generate report
+                  self.generate_report()
+                  
+                  # Return True if no critical issues found
+                  return len(all_issues) == 0
+              
+              def generate_report(self):
+                  """Generate a detailed security report"""
+                  os.makedirs('security-reports', exist_ok=True)
+                  
+                  report = {
+                      'workflow_security_validation': {
+                          'timestamp': '2024-01-01T00:00:00Z',  # Will be updated in workflow
+                          'total_workflows': len(list(self.workflows_dir.glob('*.yml')) + list(self.workflows_dir.glob('*.yaml'))),
+                          'security_violations': self.violations,
+                          'recommendations': self.recommendations,
+                          'summary': {
+                              'critical_issues': len(self.violations),
+                              'recommendations': len(self.recommendations),
+                              'passed': len(self.violations) == 0
+                          }
+                      }
+                  }
+                  
+                  import json
+                  with open('security-reports/workflow-security-report.json', 'w') as f:
+                      json.dump(report, f, indent=2)
+                  
+                  # Also create a markdown report
+                  with open('security-reports/workflow-security-report.md', 'w') as f:
+                      f.write("# Workflow Security Validation Report\n\n")
+                      f.write(f"**Total Workflows**: {report['workflow_security_validation']['total_workflows']}\n")
+                      f.write(f"**Security Violations**: {len(self.violations)}\n")
+                      f.write(f"**Recommendations**: {len(self.recommendations)}\n\n")
+                      
+                      if self.violations:
+                          f.write("## ❌ Security Issues\n\n")
+                          for issue in self.violations:
+                              f.write(f"- {issue}\n")
+                          f.write("\n")
+                      
+                      if self.recommendations:
+                          f.write("## 💡 Recommendations\n\n")
+                          for rec in self.recommendations:
+                              f.write(f"- {rec}\n")
+                          f.write("\n")
+                      
+                      if not self.violations and not self.recommendations:
+                          f.write("## ✅ All Clear!\n\nAll workflows passed security validation.\n")
+          
+          def main():
+              validator = WorkflowValidator()
+              success = validator.validate_all_workflows()
+              return 0 if success else 1
+          
+          if __name__ == '__main__':
+              sys.exit(main())
+          EOF
+          chmod +x .github/security-tools/workflow-validator.py
+
+      - name: Run workflow security validation
+        run: |
+          python .github/security-tools/workflow-validator.py
+
+      - name: Update timestamp in report
+        run: |
+          if [ -f "security-reports/workflow-security-report.json" ]; then
+            # Update timestamp
+            python -c "
+          import json
+          from datetime import datetime
+          
+          with open('security-reports/workflow-security-report.json', 'r') as f:
+              data = json.load(f)
+          
+          data['workflow_security_validation']['timestamp'] = datetime.utcnow().isoformat() + 'Z'
+          
+          with open('security-reports/workflow-security-report.json', 'w') as f:
+              json.dump(data, f, indent=2)
+          "
+          fi
+
+      - name: Upload workflow security reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: workflow-security-reports
+          path: security-reports/
+          retention-days: 30
+
+      - name: Comment on PR with validation results
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            // Read the validation report
+            let reportContent = '';
+            try {
+              if (fs.existsSync('security-reports/workflow-security-report.md')) {
+                reportContent = fs.readFileSync('security-reports/workflow-security-report.md', 'utf8');
+              } else {
+                reportContent = '# Workflow Security Validation\n\n✅ No security issues detected in workflow changes.';
+              }
+            } catch (error) {
+              reportContent = '# Workflow Security Validation\n\n⚠️ Unable to read validation report.';
+            }
+            
+            // Create or update comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            
+            const existingComment = comments.find(comment => 
+              comment.body.includes('<!-- workflow-security-validation -->')
+            );
+            
+            const body = `<!-- workflow-security-validation -->
+            ${reportContent}
+            
+            ---
+            *This comment is automatically updated by the workflow security validation.*`;
+            
+            if (existingComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existingComment.id,
+                body: body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body: body
+              });
+            }
+
+      - name: Fail if critical security issues found
+        run: |
+          if [ -f "security-reports/workflow-security-report.json" ]; then
+            CRITICAL_ISSUES=$(python -c "
+          import json
+          try:
+              with open('security-reports/workflow-security-report.json', 'r') as f:
+                  data = json.load(f)
+              print(data['workflow_security_validation']['summary']['critical_issues'])
+          except:
+              print('0')
+          ")
+            
+            if [ "$CRITICAL_ISSUES" -gt 0 ]; then
+              echo "❌ Found $CRITICAL_ISSUES critical security issues in workflows"
+              echo "Please review and fix the security issues before proceeding"
+              exit 1
+            else
+              echo "✅ No critical security issues found"
+            fi
+          fi
