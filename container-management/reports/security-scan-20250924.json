@@ -1,0 +1,17 @@
+{
+  "scan_metadata": {
+    "timestamp": "2025-09-24T13:31:56Z",
+    "scanner": "container-security-scanner",
+    "scan_type": "dockerfile_analysis"
+  },
+  "scanned_files": [],
+  "security_findings": [],
+  "recommendations": [],
+  "summary": {
+    "total_files": 3,
+    "critical_issues": 0,
+    "high_issues": 0,
+    "medium_issues": 0,
+    "low_issues": 0
+  }
+}
