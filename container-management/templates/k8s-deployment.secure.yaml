@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: secure-app
+  labels: { app: secure-app, version: v1.0.0 }
+spec:
+  replicas: 3
+  selector: { matchLabels: { app: secure-app } }
+  template:
+    metadata: { labels: { app: secure-app } }
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 1001, runAsGroup: 1001, fsGroup: 1001 }
+      containers:
+      - name: app
+        image: myapp:latest
+        ports: [ { containerPort: 3000 } ]
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities: { drop: [ "ALL" ] }
+        resources:
+          requests: { memory: "128Mi", cpu: "100m" }
+          limits:   { memory: "256Mi", cpu: "200m" }
+        livenessProbe:  { httpGet: { path: /health, port: 3000 }, initialDelaySeconds: 30, periodSeconds: 10 }
+        readinessProbe: { httpGet: { path: /ready,  port: 3000 }, initialDelaySeconds: 5,  periodSeconds: 5  }
+        volumeMounts:
+          - { name: tmp-volume,   mountPath: /tmp }
+          - { name: cache-volume, mountPath: /app/cache }
+      volumes:
+        - { name: tmp-volume,   emptyDir: {} }
+        - { name: cache-volume, emptyDir: {} }
