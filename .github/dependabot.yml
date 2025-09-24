@@ -1,5 +1,6 @@
 version: 2
 updates:
+  # Maven dependencies
   - package-ecosystem: "maven"
     directory: "/"
     schedule:
@@ -8,11 +9,71 @@ updates:
     labels:
       - "dependencies"
       - "java"
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
+    commit-message:
+      prefix: "maven"
+      include: "scope"
+
+  # Docker base images and containers
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "weekly"
+      interval: "daily"
+      time: "09:00"
+      timezone: "Asia/Seoul"
+    open-pull-requests-limit: 15
+    labels:
+      - "dependencies"
+      - "docker"
+      - "security"
+    reviewers:
+      - "davidkims"
+    assignees:
+      - "davidkims"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    # Enhanced Docker configuration
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-patch"]
+    allow:
+      - dependency-type: "direct"
+      - dependency-type: "indirect"
+
+  # Docker containers in subdirectories
+  - package-ecosystem: "docker"
+    directory: "/containers"
+    schedule:
+      interval: "daily"
+      time: "10:00"
+      timezone: "Asia/Seoul"
     open-pull-requests-limit: 10
     labels:
       - "dependencies"
       - "docker"
+      - "containers"
+
+  # Docker compose files
+  - package-ecosystem: "docker"
+    directory: "/docker-compose"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker-compose"
+
+  # Multi-architecture Docker builds
+  - package-ecosystem: "docker"
+    directory: "/docker/multi-arch"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+      - "multi-arch"
