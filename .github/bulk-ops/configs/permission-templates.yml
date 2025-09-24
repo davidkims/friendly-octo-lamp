@@ -1,0 +1,71 @@
+# Permission Templates Configuration
+permission_levels:
+  strict:
+    description: "Strict security permissions"
+    default_dir: "750"
+    default_file: "640"
+    executable: "750"
+    config: "600"
+    logs: "640"
+    temp: "700"
+    public: "644"
+    secret: "600"
+    script: "750"
+
+  standard:
+    description: "Standard balanced permissions"
+    default_dir: "755"
+    default_file: "644"
+    executable: "755"
+    config: "644"
+    logs: "664"
+    temp: "755"
+    public: "644"
+    secret: "600"
+    script: "755"
+
+  permissive:
+    description: "Permissive development permissions"
+    default_dir: "775"
+    default_file: "664"
+    executable: "775"
+    config: "664"
+    logs: "666"
+    temp: "777"
+    public: "664"
+    secret: "600"
+    script: "775"
+
+# File type mappings
+file_patterns:
+  executable:
+    - "*.sh"
+    - "*.py"
+    - "*.pl"
+    - "*.rb"
+    - "bin/*"
+    - "scripts/*"
+  config:
+    - "*.yml"
+    - "*.yaml"
+    - "*.json"
+    - "*.conf"
+    - "*.cfg"
+    - "*.ini"
+    - "config/*"
+  secret:
+    - "*.key"
+    - "*.pem"
+    - "*.p12"
+    - "*.jks"
+    - "*password*"
+    - "*secret*"
+    - ".env*"
+  public:
+    - "*.md"
+    - "*.txt"
+    - "*.html"
+    - "*.css"
+    - "*.js"
+    - "docs/*"
+    - "public/*"

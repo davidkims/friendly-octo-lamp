@@ -1,0 +1,110 @@
+# Directory Templates Configuration
+templates:
+  standard:
+    description: "Standard project structure"
+    directories:
+      - src/main/java
+      - src/main/resources
+      - src/test/java
+      - src/test/resources
+      - docs
+      - scripts
+      - config
+      - logs
+      - temp
+      - build
+    permissions:
+      src: "755"
+      docs: "755"
+      scripts: "755"
+      config: "644"
+      logs: "777"
+      temp: "777"
+      build: "755"
+
+  microservices:
+    description: "Microservices architecture"
+    directories:
+      - services/user-service/src
+      - services/user-service/config
+      - services/user-service/tests
+      - services/auth-service/src
+      - services/auth-service/config
+      - services/auth-service/tests
+      - services/api-gateway/src
+      - services/api-gateway/config
+      - services/api-gateway/tests
+      - shared/libraries
+      - shared/config
+      - shared/docs
+      - infrastructure/docker
+      - infrastructure/kubernetes
+      - infrastructure/terraform
+      - monitoring/logs
+      - monitoring/metrics
+      - scripts/deployment
+      - scripts/database
+    permissions:
+      services: "755"
+      shared: "755"
+      infrastructure: "755"
+      monitoring: "777"
+      scripts: "755"
+
+  docker:
+    description: "Docker-focused project structure"
+    directories:
+      - docker/images/base
+      - docker/images/app
+      - docker/images/db
+      - docker/compose/development
+      - docker/compose/staging
+      - docker/compose/production
+      - docker/volumes/data
+      - docker/volumes/logs
+      - docker/volumes/config
+      - docker/secrets
+      - docker/scripts
+      - containers/web
+      - containers/api
+      - containers/worker
+      - kubernetes/manifests
+      - kubernetes/configs
+      - kubernetes/secrets
+    permissions:
+      docker: "755"
+      containers: "755"
+      kubernetes: "755"
+      secrets: "600"
+      volumes: "777"
+
+  monorepo:
+    description: "Monorepo structure with multiple projects"
+    directories:
+      - apps/web-app/src
+      - apps/web-app/public
+      - apps/web-app/tests
+      - apps/mobile-app/src
+      - apps/mobile-app/assets
+      - apps/mobile-app/tests
+      - apps/api-server/src
+      - apps/api-server/config
+      - apps/api-server/tests
+      - packages/shared-components
+      - packages/utilities
+      - packages/types
+      - tools/build
+      - tools/testing
+      - tools/deployment
+      - docs/api
+      - docs/guides
+      - docs/architecture
+      - config/development
+      - config/staging
+      - config/production
+    permissions:
+      apps: "755"
+      packages: "755"
+      tools: "755"
+      docs: "755"
+      config: "644"

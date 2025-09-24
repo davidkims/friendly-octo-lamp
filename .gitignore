@@ -16,3 +16,43 @@ bin-release/
 # Project files, i.e. `.project`, `.actionScriptProperties` and `.flexProperties`
 # should NOT be excluded as they contain compiler settings and other important
 # information for Eclipse / Flash Builder.
+
+
+# Bulk Operations
+.github/bulk-ops/logs/*.log
+.github/bulk-ops/temp/*
+!.github/bulk-ops/temp/.gitkeep
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.cache
+
+# Log files
+*.log
+logs/
+
+# Security files
+*.key
+*.pem
+*.p12
+*.jks
+.env
+.env.local
+.env.*.local

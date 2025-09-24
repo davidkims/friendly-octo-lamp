@@ -1,0 +1,15 @@
+# Global owners
+* @davidkims
+
+# Docker files
+Dockerfile* @davidkims
+docker-compose*.yml @davidkims
+.dockerignore @davidkims
+
+# GitHub workflows
+.github/ @davidkims
+
+# Security files
+*.key @davidkims
+*.pem @davidkims
+.env* @davidkims
