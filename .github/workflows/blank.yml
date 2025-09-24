@@ -92,6 +92,7 @@ jobs:
           echoe "CREATE_PR         = ${{ env.CREATE_PR }}"
           echoe "REGISTRY          = ${{ env.REGISTRY }}"
 
+      # ==== Upgrades: OS + pip + npm(권한 폴백) ====
       - name: System & Toolchain Upgrade (No-Skip, Multi-PM, Graceful)
         run: |
           source "${{ steps.echo_helpers.outputs.helpers }}"
@@ -132,18 +133,38 @@ jobs:
               warn "Unknown package manager, skipping OS-level upgrade"
               ;;
           esac
+
           echoe "Upgrading Python toolchain and common pip packages"
           python -m pip install --upgrade pip setuptools wheel || warn "pip core upgrade failed"
           pip list --format=freeze >/tmp/pip.freeze || true
           grep -E 'pyyaml|jinja2|requests|semver' /tmp/pip.freeze >/dev/null 2>&1 && \
             pip install --upgrade pyyaml jinja2 requests semver || true
+
           echoe "Upgrading Node tooling if available"
           if command -v node >/dev/null 2>&1; then
-            (npm -v && retry 3 npm i -g npm@latest) || warn "npm upgrade failed"
+            node -v || true
+            # NPM upgrade (sudo → user prefix fallback)
+            if command -v npm >/dev/null 2>&1; then
+              echoe "Attempting global npm upgrade with sudo"
+              ( retry 3 sudo -E npm i -g npm@latest ) || {
+                warn "sudo npm global upgrade failed → falling back to user prefix"
+                export NPM_CONFIG_PREFIX="$HOME/.npm-global"
+                mkdir -p "$NPM_CONFIG_PREFIX"
+                echo "NPM_CONFIG_PREFIX=$NPM_CONFIG_PREFIX" >> "$GITHUB_ENV"
+                echo "$NPM_CONFIG_PREFIX/bin" >> "$GITHUB_PATH"
+                npm config set fund false || true
+                npm config set update-notifier false || true
+                retry 3 npm i -g npm@latest || warn "npm userland upgrade failed; continue"
+              }
+              npm -v || warn "npm not available after upgrade attempt"
+            else
+              warn "npm not found on runner"
+            fi
             (corepack enable 2>/dev/null || true)
           else
-            warn "node not found on runner; skipping npm global upgrade"
+            warn "node not found on runner; skipping npm upgrade"
           fi
+
           echoe "Upgrade sequence done"
 
       - name: Set up Docker Buildx
@@ -161,8 +182,10 @@ jobs:
           retry 3 bash -c 'sudo curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose'
           sudo chmod +x /usr/local/bin/docker-compose
           /usr/local/bin/docker-compose version || warn "compose version check failed"
+
           echoe "Installing Helm"
           retry 3 bash -c 'curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash' || warn "helm install script failed"
+
           echoe "Installing kubectl"
           KREL="$(retry 3 bash -c "curl -fsSL https://dl.k8s.io/release/stable.txt")" || KREL=""
           if [ -n "$KREL" ]; then
@@ -172,8 +195,10 @@ jobs:
           else
             warn "Failed to resolve kubectl stable version"
           fi
+
           echoe "Ensuring jq present"
           command -v jq >/dev/null || (sudo apt-get update -y && sudo apt-get install -y jq || true)
+
           echoe "Installing Python deps"
           python -m pip install --upgrade pip
           pip install pyyaml jinja2 requests semver
@@ -443,25 +468,38 @@ jobs:
       - name: Generate comprehensive report (echo)
         run: |
           source "${{ steps.echo_helpers.outputs.helpers }}"
+          set -Eeuo pipefail
           echoe "Generating comprehensive report"
+
           TS_UTC=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           REPORT_FILE="container-management/reports/comprehensive-report-$(date +%Y%m%d).md"
-          DOCKERFILES=$(find . -name "Dockerfile*" -type f | wc -l | tr -d ' ')
-          COMPOSEFILES=$(find . \( -name "docker-compose*.yml" -o -name "docker-compose*.yaml" \) | wc -l | tr -d ' ')
-          K8SFILES=$( (find . -path "*/k8s/*" -o -path "*/kubernetes/*") -a \( -name "*.yaml" -o -name "*.yml" \) 2>/dev/null | wc -l | tr -d ' ')
-          HELMCHARTS=$(find . -name "Chart.yaml" | wc -l | tr -d ' ')
+          mkdir -p "$(dirname "$REPORT_FILE")"
+
+          # 안전 카운트: find -print0 | NUL 카운트
+          count0() {
+            eval "find . $* -print0" | tr -cd '\0' | wc -c | tr -d ' '
+          }
+
+          DOCKERFILES=$(count0 "-type f -name 'Dockerfile*'")
+          COMPOSEFILES=$(count0 "-type f \\( -name 'docker-compose*.yml' -o -name 'docker-compose*.yaml' \\)")
+          K8SFILES=$(count0 "-type f \\( \\( -path '*/k8s/*' -o -path '*/kubernetes/*' \\) -a \\( -name '*.yaml' -o -name '*.yml' \\) \\)")
+          HELMCHARTS=$(count0 "-type f -name 'Chart.yaml'")
+
           cat > "$REPORT_FILE" <<EOF
           # Container File Management Comprehensive Report
+
           **Generated:** ${TS_UTC}  
           **Update Type:** ${{ env.UPDATE_TYPE }}  
           **Base Image Update:** ${{ env.BASE_IMAGE_UPDATE }}  
           **Security Scan:** ${{ env.SECURITY_SCAN }}  
           **Registry:** ${{ env.REGISTRY }}  
+
           ## Summary
           - Dockerfiles: ${DOCKERFILES}
           - Docker Compose: ${COMPOSEFILES}
           - Kubernetes Manifests: ${K8SFILES}
           - Helm Charts: ${HELMCHARTS}
+
           ## Directory Structure
           \`\`\`
           container-management/
@@ -472,12 +510,14 @@ jobs:
           ├── updates/
           └── backups/
           \`\`\`
+
           ## Recommendations
           1. Review generated files
           2. Test security improvements
           3. Apply CI scanning on PRs
           4. Monitor runtime health and resources
           EOF
+
           echoe "Report ready: ${REPORT_FILE}"
 
       - name: Update .gitignore for container management (echo, idempotent)
@@ -493,8 +533,7 @@ jobs:
           add_line "container-management/**/*.tmp"
           echoe ".gitignore updated"
 
-      # ---- 변경을 반드시 보장하는 마커 파일 생성 (PR no-op 방지) ----
-      - name: Ensure at least one change exists (no-op PR 방지)
+      - name: Ensure at least one change exists (no-op PR prevention)
         run: |
           source "${{ steps.echo_helpers.outputs.helpers }}"
           mkdir -p container-management/updates
@@ -502,7 +541,6 @@ jobs:
             > "container-management/updates/marker-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.md"
           echoe "Created marker file to guarantee diff"
 
-      # ---- PR 생성: 항상 시도, 브랜치/베이스 안전 지정, 커밋터/작성자 명시 ----
       - name: Create pull request (echo, always-attempt, safe base/branch)
         id: cpr
         uses: peter-evans/create-pull-request@v6
@@ -563,23 +601,3 @@ jobs:
           author: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
           draft: false
           labels: containers,security,docker,kubernetes,automated
-
-      # 직접 커밋 경로는 보조 수단(보통 PR 생성 성공 시 noop)
-      - name: Commit directly if PR not created (fallback)
-        if: steps.cpr.outputs.pull-request-number == ''
-        run: |
-          source "${{ steps.echo_helpers.outputs.helpers }}"
-          echoe "PR was not created (maybe already up-to-date). Fallback to direct commit."
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add -A
-          if git diff --staged --quiet; then
-            warn "No changes to commit even after marker — nothing to push."
-          else
-            git commit -m "feat: container file mgmt + security updates (echo fallback)
-            Update Type: ${{ env.UPDATE_TYPE }}
-            Base Image Update: ${{ env.BASE_IMAGE_UPDATE }}
-            Security Scan: ${{ env.SECURITY_SCAN }}
-            Registry: ${{ env.REGISTRY }}"
-            git push || warn "push failed (likely protected branch)"
-          fi
