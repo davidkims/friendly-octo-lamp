@@ -52,8 +52,6 @@ permissions:
 jobs:
   container-file-update:
     runs-on: ubuntu-latest
-
-    # 입력이 없는 schedule/push 에서도 안정적으로 동작하도록 기본값 환경변수로 정규화
     env:
       UPDATE_TYPE: ${{ inputs.update_type || 'all-containers' }}
       BASE_IMAGE_UPDATE: ${{ (inputs.base_image_update != '' && inputs.base_image_update) || true }}
@@ -68,7 +66,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
-      - name: Echo helpers (TS/echoe/warn/fail) + shell strict mode
+      - name: Echo helpers (TS/echoe/warn/fail/retry)
         id: echo_helpers
         run: |
           set -Eeuo pipefail
@@ -78,16 +76,8 @@ jobs:
           echoe(){ printf "[%s] %s\n" "$(TS)" "$*"; }
           warn() { printf "[%s] [WARN] %s\n" "$(TS)" "$*" >&2; }
           fail() { printf "[%s] [FAIL] %s\n" "$(TS)" "$*" >&2; exit 1; }
-          retry(){ # retry <n> <cmd...>
-            local n=$1; shift
-            local i=1
-            until "$@"; do
-              if [ $i -ge "$n" ]; then return 1; fi
-              warn "retry $i/$n for: $*"
-              sleep $((i*2))
-              i=$((i+1))
-            done
-          }
+          retry(){ local n=$1; shift; local i=1; until "$@"; do
+            if [ $i -ge "$n" ]; then return 1; fi; warn "retry $i/$n: $*"; sleep $((i*2)); i=$((i+1)); done; }
           SH
           source /tmp/echo_helpers.sh
           echoe "Echo helpers installed"
@@ -96,11 +86,85 @@ jobs:
       - name: Print normalized inputs
         run: |
           source "${{ steps.echo_helpers.outputs.helpers }}"
-          echoe "UPDATE_TYPE      = ${{ env.UPDATE_TYPE }}"
-          echoe "BASE_IMAGE_UPDATE= ${{ env.BASE_IMAGE_UPDATE }}"
-          echoe "SECURITY_SCAN    = ${{ env.SECURITY_SCAN }}"
-          echoe "CREATE_PR        = ${{ env.CREATE_PR }}"
-          echoe "REGISTRY         = ${{ env.REGISTRY }}"
+          echoe "UPDATE_TYPE       = ${{ env.UPDATE_TYPE }}"
+          echoe "BASE_IMAGE_UPDATE = ${{ env.BASE_IMAGE_UPDATE }}"
+          echoe "SECURITY_SCAN     = ${{ env.SECURITY_SCAN }}"
+          echoe "CREATE_PR         = ${{ env.CREATE_PR }}"
+          echoe "REGISTRY          = ${{ env.REGISTRY }}"
+
+      - name: System & Toolchain Upgrade (No-Skip, Multi-PM, Graceful)
+        run: |
+          source "${{ steps.echo_helpers.outputs.helpers }}"
+          set -Eeuo pipefail
+          echoe "Starting full upgrade sequence"
+          PM="apt"; command -v yum >/dev/null && PM="yum"
+          command -v dnf >/dev/null && PM="dnf"
+          command -v zypper >/dev/null && PM="zypper"
+          command -v apk >/dev/null && PM="apk"
+          echoe "Detected package manager: ${PM}"
+          case "$PM" in
+            apt)
+              retry 3 sudo apt-get update -y || warn "apt update failed"
+              retry 3 sudo DEBIAN_FRONTEND=noninteractive apt-get -o Dpkg::Options::="--force-confnew" dist-upgrade -y || warn "apt dist-upgrade failed"
+              sudo apt-get install -y jq curl ca-certificates git || true
+              sudo apt-get autoremove -y || true
+              sudo apt-get clean || true
+              ;;
+            yum)
+              retry 3 sudo yum -y update || warn "yum update failed"
+              sudo yum -y install jq curl ca-certificates git || true
+              ;;
+            dnf)
+              retry 3 sudo dnf -y upgrade --refresh || warn "dnf upgrade failed"
+              sudo dnf -y install jq curl ca-certificates git || true
+              ;;
+            zypper)
+              retry 3 sudo zypper --non-interactive refresh || warn "zypper refresh failed"
+              retry 3 sudo zypper --non-interactive update || warn "zypper update failed"
+              sudo zypper --non-interactive install jq curl ca-certificates git || true
+              ;;
+            apk)
+              retry 3 sudo apk update || warn "apk update failed"
+              retry 3 sudo apk upgrade || warn "apk upgrade failed"
+              sudo apk add --no-cache jq curl ca-certificates git || true
+              ;;
+            *)
+              warn "Unknown package manager, skipping OS-level upgrade"
+              ;;
+          esac
+
+          echoe "Upgrading Python toolchain and common pip packages"
+          python -m pip install --upgrade pip setuptools wheel || warn "pip core upgrade failed"
+          pip list --format=freeze >/tmp/pip.freeze || true
+          grep -E 'pyyaml|jinja2|requests|semver' /tmp/pip.freeze >/dev/null 2>&1 && \
+            pip install --upgrade pyyaml jinja2 requests semver || true
+
+          echoe "Upgrading Node tooling if available"
+          if command -v node >/dev/null 2>&1; then
+            node -v || true
+            # NPM upgrade (sudo → user prefix fallback)
+            if command -v npm >/dev/null 2>&1; then
+              echoe "Attempting global npm upgrade with sudo"
+              ( retry 3 sudo -E npm i -g npm@latest ) || {
+                warn "sudo npm global upgrade failed → falling back to user prefix"
+                export NPM_CONFIG_PREFIX="$HOME/.npm-global"
+                mkdir -p "$NPM_CONFIG_PREFIX"
+                echo "NPM_CONFIG_PREFIX=$NPM_CONFIG_PREFIX" >> "$GITHUB_ENV"
+                echo "$NPM_CONFIG_PREFIX/bin" >> "$GITHUB_PATH"
+                npm config set fund false || true
+                npm config set update-notifier false || true
+                retry 3 npm i -g npm@latest || warn "npm userland upgrade failed; continue"
+              }
+              npm -v || warn "npm not available after upgrade attempt"
+            else
+              warn "npm not found on runner"
+            fi
+            (corepack enable 2>/dev/null || true)
+          else
+            warn "node not found on runner; skipping npm upgrade"
+          fi
+
+          echoe "Upgrade sequence done"
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -119,17 +183,20 @@ jobs:
           /usr/local/bin/docker-compose version || warn "compose version check failed"
 
           echoe "Installing Helm"
-          retry 3 bash -c 'curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash'
+          retry 3 bash -c 'curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash' || warn "helm install script failed"
 
           echoe "Installing kubectl"
-          KREL="$(retry 3 bash -c "curl -fsSL https://dl.k8s.io/release/stable.txt")"
-          retry 3 bash -c "curl -fsSL https://dl.k8s.io/release/${KREL}/bin/linux/amd64/kubectl -o kubectl"
-          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-          kubectl version --client=true || warn "kubectl version failed"
+          KREL="$(retry 3 bash -c "curl -fsSL https://dl.k8s.io/release/stable.txt")" || KREL=""
+          if [ -n "$KREL" ]; then
+            retry 3 bash -c "curl -fsSL https://dl.k8s.io/release/${KREL}/bin/linux/amd64/kubectl -o kubectl"
+            sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+            kubectl version --client=true || warn "kubectl version failed"
+          else
+            warn "Failed to resolve kubectl stable version"
+          fi
 
-          echoe "Installing jq"
-          sudo apt-get update -y
-          sudo apt-get install -y jq
+          echoe "Ensuring jq present"
+          command -v jq >/dev/null || (sudo apt-get update -y && sudo apt-get install -y jq || true)
 
           echoe "Installing Python deps"
           python -m pip install --upgrade pip
@@ -152,24 +219,17 @@ jobs:
           import os, yaml, json, logging
           from pathlib import Path
           from datetime import datetime
-
           logging.basicConfig(level=logging.INFO, format='[%(asctime)s] %(levelname)s: %(message)s')
           log = logging.getLogger("analyzer")
-
           class Analyzer:
               def __init__(self, registry="docker.io"):
                   self.registry = registry
                   self.root = Path.cwd()
-                  self.out = {
-                      "dockerfiles": [], "compose_files": [], "kubernetes_manifests": [], "helm_charts": [],
-                      "summary": {"total_files": 0, "outdated_images": 0, "security_issues": 0, "recommendations": []},
-                      "meta": {"registry": registry, "generated_at": datetime.utcnow().isoformat()+"Z"}
-                  }
-
-              def _echo(self, msg): log.info(msg)
-
+                  self.out = {"dockerfiles": [], "compose_files": [], "kubernetes_manifests": [], "helm_charts": [],
+                              "summary": {"total_files": 0, "outdated_images": 0, "security_issues": 0, "recommendations": []},
+                              "meta": {"registry": registry, "generated_at": datetime.utcnow().isoformat()+"Z"}}
               def scan(self):
-                  self._echo("Scanning repository for container files")
+                  log.info("Scanning repository for container files")
                   for p in self.root.rglob("Dockerfile*"):
                       if p.is_file(): self.out["dockerfiles"].append({"file": str(p)})
                   for pat in ("docker-compose*.yml","docker-compose*.yaml"):
@@ -180,9 +240,8 @@ jobs:
                       if any(x in str(p) for x in ("k8s","kubernetes","manifests")): self.out["kubernetes_manifests"].append({"file": str(p)})
                   for p in self.root.rglob("Chart.yaml"): self.out["helm_charts"].append({"file": str(p)})
                   self.out["summary"]["total_files"] = sum(len(self.out[k]) for k in ("dockerfiles","compose_files","kubernetes_manifests","helm_charts"))
-                  self._echo(f"Found {self.out['summary']['total_files']} container-related files")
+                  log.info(f"Found {self.out['summary']['total_files']} container-related files")
                   return self.out
-
           if __name__ == "__main__":
               import argparse
               ap = argparse.ArgumentParser()
@@ -211,7 +270,6 @@ jobs:
           RUN npm ci --only=production && npm cache clean --force
           COPY --chown=nextjs:nodejs . .
           RUN npm run build
-
           FROM node:18-alpine AS runner
           RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
           WORKDIR /app
@@ -221,7 +279,6 @@ jobs:
           HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 CMD curl -f http://localhost:3000/health || exit 1
           CMD ["npm","start"]
           EOF
-
           cat > container-management/templates/docker-compose.secure.yml << 'EOF'
           version: '3.8'
           services:
@@ -243,7 +300,6 @@ jobs:
                 timeout: 10s
                 retries: 3
                 start_period: 40s
-
             database:
               image: postgres:15-alpine
               environment:
@@ -259,12 +315,10 @@ jobs:
               cap_drop: [ "ALL" ]
               cap_add:  [ "CHOWN","SETGID","SETUID" ]
               secrets: [ db_password ]
-
           volumes: { postgres_data: {} }
           networks: { app-network: { driver: bridge } }
           secrets: { db_password: { file: ./secrets/db_password.txt } }
           EOF
-
           cat > container-management/templates/k8s-deployment.secure.yaml << 'EOF'
           apiVersion: apps/v1
           kind: Deployment
@@ -317,41 +371,33 @@ jobs:
           #!/usr/bin/env bash
           set -Eeuo pipefail
           source /tmp/echo_helpers.sh
-
           UPDATE_TYPE="${UPDATE_TYPE:-all-containers}"
           BASE_IMAGE_UPDATE="${BASE_IMAGE_UPDATE:-true}"
           TS_UTC=$(TS)
           BKDIR="container-management/backups/$(date +%Y%m%d)"
-
           echoe "=== Container File Update Process ==="
           echoe "UPDATE_TYPE       : ${UPDATE_TYPE}"
           echoe "BASE_IMAGE_UPDATE : ${BASE_IMAGE_UPDATE}"
           echoe "START             : ${TS_UTC}"
-
           echoe "Creating backup dir: ${BKDIR}"
           mkdir -p "${BKDIR}"
-
           echoe "Backing up Dockerfiles / Compose files (if any)"
           find . -name "Dockerfile*" -type f -print -exec cp {} "${BKDIR}/" \; || true
           find . -name "docker-compose*.yml"  -type f -print -exec cp {} "${BKDIR}/" \; || true
           find . -name "docker-compose*.yaml" -type f -print -exec cp {} "${BKDIR}/" \; || true
-
           if [ ! -f Dockerfile ]; then
             echoe "No Dockerfile found → creating sample modern Dockerfile"
             cp container-management/templates/Dockerfile.modern Dockerfile
           fi
-
           if [ ! -f docker-compose.yml ]; then
             echoe "No docker-compose.yml found → creating secure template"
             cp container-management/templates/docker-compose.secure.yml docker-compose.yml
           fi
-
           mkdir -p k8s
           if [ ! -f k8s/deployment.yaml ]; then
             echoe "No k8s/deployment.yaml found → creating secure template"
             cp container-management/templates/k8s-deployment.secure.yaml k8s/deployment.yaml
           fi
-
           if [ "${BASE_IMAGE_UPDATE}" = "true" ]; then
             echoe "Updating common base images to pinned versions"
             for f in $(ls -1 Dockerfile* 2>/dev/null || true); do
@@ -363,38 +409,31 @@ jobs:
               sed -i 's/\<nginx:latest\>/nginx:1.25-alpine/g' "$f" || true
             done
           fi
-
           RPT="container-management/reports/update-report-$(date +%Y%m%d).md"
           echoe "Writing update report: ${RPT}"
           cat > "${RPT}" <<EOR
           # Container File Update Report
-
           **Generated:** ${TS_UTC}
           **Update Type:** ${UPDATE_TYPE}
           **Base Image Update:** ${BASE_IMAGE_UPDATE}
-
           ## Changes Made
           - Dockerfile hardening (multi-stage, non-root, healthchecks)
           - Compose security options, healthchecks, secrets
           - K8s securityContext, probes, resource limits
-
           ## Next Steps
           1) Review & test locally
           2) Stage deploy & observe
           3) Schedule recurring scans
           EOR
-
           echoe "Update process completed"
           SH
           chmod +x container-management/tools/update-containers.sh
-
           echoe "Executing update script"
           UPDATE_TYPE="${{ env.UPDATE_TYPE }}" \
           BASE_IMAGE_UPDATE="${{ env.BASE_IMAGE_UPDATE }}" \
           bash container-management/tools/update-containers.sh
 
-      - name: Security scanning (echo)
-        if: env.SECURITY_SCAN == 'true'
+      - name: Security scanning (always-attempt, echo)
         run: |
           source "${{ steps.echo_helpers.outputs.helpers }}"
           echoe "Writing security scanner"
@@ -405,24 +444,21 @@ jobs:
           TS_UTC=$(TS)
           RPT="container-management/reports/security-scan-$(date +%Y%m%d).json"
           echoe "Start security scan @ ${TS_UTC}"
-
           cat > "${RPT}" <<JSON
           { "scan_metadata": { "timestamp": "${TS_UTC}", "scanner": "container-security-scanner", "scan_type": "dockerfile_analysis" },
             "scanned_files": [], "security_findings": [], "recommendations": [], "summary": { "total_files": 0, "critical_issues": 0, "high_issues": 0, "medium_issues": 0, "low_issues": 0 } }
           JSON
-
           count=0
           while IFS= read -r -d '' f; do
             count=$((count+1))
             echoe "Scanning $f"
-            # simple checks
-            grep -qE '^FROM .*:latest' "$f" && echoe "  ⚠ latest tag: $f" && true
+            grep -qE '^FROM .*:latest' "$f" && echoe "  ⚠ latest tag: $f" || true
             grep -qE '^USER ' "$f" || echoe "  ⚠ missing USER (non-root): $f"
             grep -qE '^HEALTHCHECK ' "$f" || echoe "  ⚠ missing HEALTHCHECK: $f"
             grep -qE '^ADD http' "$f" && echoe "  ⚠ ADD with URL: $f" || true
           done < <(find . -name "Dockerfile*" -type f -print0)
-
-          jq --arg c "$count" '.summary.total_files = ($c|tonumber)' "${RPT}" > tmp.$$.json && mv tmp.$$.json "${RPT}"
+          command -v jq >/dev/null 2>&1 && \
+            jq --arg c "$count" '.summary.total_files = ($c|tonumber)' "${RPT}" > tmp.$$.json && mv tmp.$$.json "${RPT}" || warn "jq not available, skipping JSON edit"
           echoe "Security scan finished (files=$count) → ${RPT}"
           SH
           chmod +x container-management/tools/security-scanner.sh
@@ -431,15 +467,16 @@ jobs:
       - name: Generate comprehensive report (echo)
         run: |
           source "${{ steps.echo_helpers.outputs.helpers }}"
+          set -Eeuo pipefail
           echoe "Generating comprehensive report"
           TS_UTC=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
           REPORT_FILE="container-management/reports/comprehensive-report-$(date +%Y%m%d).md"
-
-          DOCKERFILES=$(find . -name "Dockerfile*" -type f | wc -l | tr -d ' ')
-          COMPOSEFILES=$(find . \( -name "docker-compose*.yml" -o -name "docker-compose*.yaml" \) | wc -l | tr -d ' ')
-          K8SFILES=$(find . \( -path "*/k8s/*" -o -path "*/kubernetes/*" \) -name "*.yaml" -o -name "*.yml" | wc -l | tr -d ' ')
-          HELMCHARTS=$(find . -name "Chart.yaml" | wc -l | tr -d ' ')
-
+          mkdir -p "$(dirname "$REPORT_FILE")"
+          count0() { eval "find . $* -print0" | tr -cd '\0' | wc -c | tr -d ' '; }
+          DOCKERFILES=$(count0 "-type f -name 'Dockerfile*'")
+          COMPOSEFILES=$(count0 "-type f \\( -name 'docker-compose*.yml' -o -name 'docker-compose*.yaml' \\)")
+          K8SFILES=$(count0 "-type f \\( \\( -path '*/k8s/*' -o -path '*/kubernetes/*' \\) -a \\( -name '*.yaml' -o -name '*.yml' \\) \\)")
+          HELMCHARTS=$(count0 "-type f -name 'Chart.yaml'")
           cat > "$REPORT_FILE" <<EOF
           # Container File Management Comprehensive Report
 
@@ -474,22 +511,30 @@ jobs:
           EOF
           echoe "Report ready: ${REPORT_FILE}"
 
-      - name: Update .gitignore for container management (echo)
+      - name: Update .gitignore for container management (echo, idempotent)
         run: |
           source "${{ steps.echo_helpers.outputs.helpers }}"
-          echoe "Updating .gitignore"
-          {
-            echo ""
-            echo "# Container management files"
-            echo "container-management/backups/"
-            echo "container-management/temp/"
-            echo "container-management/**/*.log"
-            echo "container-management/**/*.tmp"
-          } >> .gitignore
+          echoe "Updating .gitignore idempotently"
+          add_line(){ grep -qxF "$1" .gitignore || echo "$1" >> .gitignore; }
+          echo >> .gitignore
+          add_line "# Container management files"
+          add_line "container-management/backups/"
+          add_line "container-management/temp/"
+          add_line "container-management/**/*.log"
+          add_line "container-management/**/*.tmp"
           echoe ".gitignore updated"
 
-      - name: Create pull request (echo)
-        if: env.CREATE_PR == 'true'
+      - name: Ensure at least one change exists (no-op PR prevention)
+        run: |
+          source "${{ steps.echo_helpers.outputs.helpers }}"
+          mkdir -p container-management/updates
+          printf "run_id=%s\nattempt=%s\nts=%s\n" "${GITHUB_RUN_ID}" "${GITHUB_RUN_ATTEMPT}" "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+            > "container-management/updates/marker-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.md"
+          echoe "Created marker file to guarantee diff"
+
+      # ⬇️ 여기서 'add-paths' 제거하여 pathspec fatal 방지 + .gitignore/마커 등 전부 스테이징
+      - name: Create pull request (echo, always-attempt, safe base/branch)
+        id: cpr
         uses: peter-evans/create-pull-request@v6
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -505,7 +550,7 @@ jobs:
             Update Type: ${{ env.UPDATE_TYPE }}
             Registry: ${{ env.REGISTRY }}
             Security Scan: ${{ env.SECURITY_SCAN }}
-          title: "🐳 Container Files Security Update - ${{ env.UPDATE_TYPE }}"
+          title: "🐳 Container Files Security Update - ${{ env.UPDATE_TYPE }} - ${{ github.run_id }}"
           body: |
             ## Container Files Update Summary
 
@@ -532,31 +577,11 @@ jobs:
             - [ ] Review resource usage
 
             _Generated with echo logging across all steps._
-          branch: feature/container-security-update-${{ github.run_number }}
+          branch: feature/container-security-update-${{ github.run_id }}-${{ github.run_attempt }}
+          base: ${{ github.event.repository.default_branch || 'main' }}
           delete-branch: true
-          labels: |
-            containers
-            security
-            docker
-            kubernetes
-            automated
-
-      - name: Commit remaining changes (no PR path) (echo)
-        if: env.CREATE_PR != 'true'
-        run: |
-          source "${{ steps.echo_helpers.outputs.helpers }}"
-          echoe "Committing changes directly"
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action"
-          git add -A
-          if git diff --staged --quiet; then
-            warn "No changes to commit"
-          else
-            git commit -m "feat: container file mgmt + security updates (echo)
-            Update Type: ${{ env.UPDATE_TYPE }}
-            Base Image Update: ${{ env.BASE_IMAGE_UPDATE }}
-            Security Scan: ${{ env.SECURITY_SCAN }}
-            Registry: ${{ env.REGISTRY }}"
-            git push
-            echoe "Pushed commit"
-          fi
+          signoff: true
+          committer: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          author: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          draft: false
+          labels: containers,security,docker,kubernetes,automated
