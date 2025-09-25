@@ -56,3 +56,9 @@ logs/
 .env
 .env.local
 .env.*.local
+
+# Container management files
+container-management/backups/
+container-management/temp/
+container-management/**/*.log
+container-management/**/*.tmp

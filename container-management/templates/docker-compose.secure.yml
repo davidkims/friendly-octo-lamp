@@ -1,0 +1,40 @@
+version: '3.8'
+services:
+  web:
+    build: { context: ., dockerfile: Dockerfile }
+    ports: ["3000:3000"]
+    environment: [ NODE_ENV=production ]
+    restart: unless-stopped
+    security_opt: [ "no-new-privileges:true" ]
+    cap_drop: [ "ALL" ]
+    cap_add:  [ "CHOWN","SETGID","SETUID" ]
+    read_only: true
+    tmpfs: [ "/tmp" ]
+    volumes: [ "./logs:/app/logs:rw" ]
+    networks: [ app-network ]
+    healthcheck:
+      test: ["CMD","curl","-f","http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  database:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: app_db
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks: [ app-network ]
+    restart: unless-stopped
+    security_opt: [ "no-new-privileges:true" ]
+    cap_drop: [ "ALL" ]
+    cap_add:  [ "CHOWN","SETGID","SETUID" ]
+    secrets: [ db_password ]
+
+volumes: { postgres_data: {} }
+networks: { app-network: { driver: bridge } }
+secrets: { db_password: { file: ./secrets/db_password.txt } }

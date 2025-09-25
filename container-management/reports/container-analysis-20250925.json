@@ -1,0 +1,28 @@
+{
+  "dockerfiles": [
+    {
+      "file": "/home/runner/work/friendly-octo-lamp/friendly-octo-lamp/container-management/templates/Dockerfile.modern"
+    }
+  ],
+  "compose_files": [
+    {
+      "file": "/home/runner/work/friendly-octo-lamp/friendly-octo-lamp/container-management/templates/docker-compose.secure.yml"
+    }
+  ],
+  "kubernetes_manifests": [
+    {
+      "file": "/home/runner/work/friendly-octo-lamp/friendly-octo-lamp/container-management/templates/k8s-deployment.secure.yaml"
+    }
+  ],
+  "helm_charts": [],
+  "summary": {
+    "total_files": 3,
+    "outdated_images": 0,
+    "security_issues": 0,
+    "recommendations": []
+  },
+  "meta": {
+    "registry": "docker.io",
+    "generated_at": "2025-09-25T04:17:09.029684Z"
+  }
+}
