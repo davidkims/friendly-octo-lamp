@@ -1,0 +1,62 @@
+[
+    {
+        "Id": "sha256:6d79abd4c96299aa91f5a4a46551042407568a3858b00ab460f4ba430984f62c",
+        "RepoTags": [
+            "ubuntu:latest"
+        ],
+        "RepoDigests": [
+            "ubuntu@sha256:353675e2a41babd526e2b837d7ec780c2a05bca0164f7ea5dbbd433d21d166fc"
+        ],
+        "Parent": "",
+        "Comment": "",
+        "Created": "2025-09-10T05:42:34.634203762Z",
+        "DockerVersion": "24.0.7",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "/bin/bash"
+            ],
+            "Image": "sha256:208faaf1a6b411f78b48292403b819cfc0d70209592c7a40a26a25e6d8852029",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": null,
+            "OnBuild": null,
+            "Labels": {
+                "org.opencontainers.image.ref.name": "ubuntu",
+                "org.opencontainers.image.version": "24.04"
+            }
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 78119818,
+        "GraphDriver": {
+            "Data": {
+                "MergedDir": "/var/lib/docker/overlay2/dc5698927717ea6cbcc9828a67a15701e575fd26951758c95967a3b580cabffc/merged",
+                "UpperDir": "/var/lib/docker/overlay2/dc5698927717ea6cbcc9828a67a15701e575fd26951758c95967a3b580cabffc/diff",
+                "WorkDir": "/var/lib/docker/overlay2/dc5698927717ea6cbcc9828a67a15701e575fd26951758c95967a3b580cabffc/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:f9f52dc133e2af9188960e5a5165cafaa51657ef740ff20219e45a561d78c591"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        }
+    }
+]

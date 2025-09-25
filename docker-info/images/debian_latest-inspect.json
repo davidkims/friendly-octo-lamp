@@ -1,0 +1,59 @@
+[
+    {
+        "Id": "sha256:999ffdddc1528999603ade1613e0d336874d34448a74db8f981c6fae4db91ad7",
+        "RepoTags": [
+            "debian:latest"
+        ],
+        "RepoDigests": [
+            "debian@sha256:833c135acfe9521d7a0035a296076f98c182c542a2b6b5a0fd7063d355d696be"
+        ],
+        "Parent": "",
+        "Comment": "debuerreotype 0.16",
+        "Created": "2025-09-08T00:00:00Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            ],
+            "Cmd": [
+                "bash"
+            ],
+            "Image": "",
+            "Volumes": null,
+            "WorkingDir": "",
+            "Entrypoint": [],
+            "OnBuild": null,
+            "Labels": null
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 119842916,
+        "GraphDriver": {
+            "Data": {
+                "MergedDir": "/var/lib/docker/overlay2/a2f7387644a82f4168bebf58001cea17a5f6415febb7d0885f10004cff5b9383/merged",
+                "UpperDir": "/var/lib/docker/overlay2/a2f7387644a82f4168bebf58001cea17a5f6415febb7d0885f10004cff5b9383/diff",
+                "WorkDir": "/var/lib/docker/overlay2/a2f7387644a82f4168bebf58001cea17a5f6415febb7d0885f10004cff5b9383/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:185e04da9d947141fd703dbf36361bdc2ff77cc27cbf500fb9f4881cb5ddbe95"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        }
+    }
+]

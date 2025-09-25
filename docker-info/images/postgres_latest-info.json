@@ -1,0 +1,23 @@
+{
+  "image": "postgres:latest",
+  "image_id": "2e4922a83e90",
+  "size": "454MB",
+  "created": "2025-09-23 19:31:05 +0000 UTC",
+  "registry": "docker.io",
+  "scanned_at": "2025-09-25T06:32:53Z",
+  "architectures": [],
+  "layers": [],
+  "vulnerabilities": {
+    "total": 0,
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "details": []
+  },
+  "dependencies": [],
+  "security_scan": {
+    "trivy_scan": null,
+    "docker_scout_scan": null
+  }
+}

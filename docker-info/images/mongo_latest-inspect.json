@@ -1,0 +1,87 @@
+[
+    {
+        "Id": "sha256:c1af690d6706adc63b8e96d76db021bb45b1ffb51af74e5e0cae3c1b93785a4a",
+        "RepoTags": [
+            "mongo:latest"
+        ],
+        "RepoDigests": [
+            "mongo@sha256:3031bfad5692e3fa1defcd054d4794370889c93b2049e0c323f2b7571e495413"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2025-09-23T19:30:00Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "ExposedPorts": {
+                "27017/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "GOSU_VERSION=1.19",
+                "JSYAML_VERSION=3.13.1",
+                "JSYAML_CHECKSUM=662e32319bdd378e91f67578e56a34954b0a2e33aca11d70ab9f4826af24b941",
+                "MONGO_PACKAGE=mongodb-org",
+                "MONGO_REPO=repo.mongodb.org",
+                "MONGO_MAJOR=8.0",
+                "MONGO_VERSION=8.0.14",
+                "HOME=/data/db",
+                "GLIBC_TUNABLES=glibc.pthread.rseq=0"
+            ],
+            "Cmd": [
+                "mongod"
+            ],
+            "Image": "",
+            "Volumes": {
+                "/data/configdb": {},
+                "/data/db": {}
+            },
+            "WorkingDir": "",
+            "Entrypoint": [
+                "docker-entrypoint.sh"
+            ],
+            "OnBuild": null,
+            "Labels": {
+                "org.opencontainers.image.ref.name": "ubuntu",
+                "org.opencontainers.image.version": "24.04"
+            }
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 909598210,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/var/lib/docker/overlay2/2c4d1e8ba88915a3a33340df46a91a9e7ebbaeb7feecec4a5386be88c7ca7e66/diff:/var/lib/docker/overlay2/08fe35939ba8f1ea14a9bc91718a6ae9a71d9c2f72c0645befdbd29304711620/diff:/var/lib/docker/overlay2/2d622ca702fca1ac7c71b322932defb91f595272f1bdee10de0682bd49dc6953/diff:/var/lib/docker/overlay2/fc92bac941867371c6accf1fa10f06f2e41438bb164d261c47c128b4549879cd/diff:/var/lib/docker/overlay2/2fbe58faa8411f8d71915d32fa1f792a6b1dc7e5137fc1b5ab5811aa67a41382/diff:/var/lib/docker/overlay2/c3ef08855707a814e6444ff3751dfaed544e6842724bffe3f7a92c069a24e3d3/diff:/var/lib/docker/overlay2/dc5698927717ea6cbcc9828a67a15701e575fd26951758c95967a3b580cabffc/diff",
+                "MergedDir": "/var/lib/docker/overlay2/f10255753d19ab97e2f64012352d944d7239be3567012db589796b16401ea47a/merged",
+                "UpperDir": "/var/lib/docker/overlay2/f10255753d19ab97e2f64012352d944d7239be3567012db589796b16401ea47a/diff",
+                "WorkDir": "/var/lib/docker/overlay2/f10255753d19ab97e2f64012352d944d7239be3567012db589796b16401ea47a/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:f9f52dc133e2af9188960e5a5165cafaa51657ef740ff20219e45a561d78c591",
+                "sha256:69ebebf6c83c8484d9daf6a2caa1d1ec96c8c5b0f2b4836070bb8381ecef6cae",
+                "sha256:73d79c3ef78aab01e748bd5e2bf932f4c680f520b287ff7542132cfa80263aed",
+                "sha256:ecd3421205ee7ad0a69e851382a45f695fca74799b8d6bd05ffe0adaa417a711",
+                "sha256:d27f420b268ba525acee999a6b2ac25b60d8e0ada5a559eb85ac9c86f86f4ecd",
+                "sha256:1bc2bcce70626ee36c682148fd7df6051cc0474f822bf1e7e228f7c6481cfd95",
+                "sha256:6890367fdf890e427c2e28b12cf8de10bf495407680206d0b7b742ab6819eab0",
+                "sha256:a4c3e04947cc66eb2f27b25fc9d15433dacae00b9e625a44f7760ae1782c5ef9"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        }
+    }
+]

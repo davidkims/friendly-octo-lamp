@@ -1,0 +1,75 @@
+[
+    {
+        "Id": "sha256:f1285ef3611d3e3f882a1004176c18fca0f3f3a194423320954ca1392c188669",
+        "RepoTags": [
+            "redis:latest"
+        ],
+        "RepoDigests": [
+            "redis@sha256:acb90ced0bd769b7c04cb4c32c4494ba7b3e0ee068bdbfff0eeb0d31c2a21078"
+        ],
+        "Parent": "",
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2025-08-18T16:44:26Z",
+        "DockerVersion": "",
+        "Author": "",
+        "Config": {
+            "Hostname": "",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "ExposedPorts": {
+                "6379/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "REDIS_DOWNLOAD_URL=http://download.redis.io/releases/redis-8.2.1.tar.gz",
+                "REDIS_DOWNLOAD_SHA=e2c1cb9dd4180a35b943b85dfc7dcdd42566cdbceca37d0d0b14c21731582d3e"
+            ],
+            "Cmd": [
+                "redis-server"
+            ],
+            "Image": "",
+            "Volumes": {
+                "/data": {}
+            },
+            "WorkingDir": "/data",
+            "Entrypoint": [
+                "docker-entrypoint.sh"
+            ],
+            "OnBuild": null,
+            "Labels": null
+        },
+        "Architecture": "amd64",
+        "Os": "linux",
+        "Size": 137137941,
+        "GraphDriver": {
+            "Data": {
+                "LowerDir": "/var/lib/docker/overlay2/9ff737c69b405b1de43943e099aa304864a0b8dd7e675fe82a09535f20069fb6/diff:/var/lib/docker/overlay2/67d1add27c631b881c1f0aa3105f1b002d2763eb76ec81cc2bcaa8808f6cf30e/diff:/var/lib/docker/overlay2/f31b042307b139bb5fbe387c6c82ca0bd3529712d1e21941728328b76a6d77e8/diff:/var/lib/docker/overlay2/24873ed76efe4c8f4a87e1e33f6d70d9f09fcd6f501fd358ea1b79c01b9a779f/diff:/var/lib/docker/overlay2/73b0fdcc346c48456572aac5b07a1ee386a1d02e8a31e9f334e7fc4c434f0e6d/diff:/var/lib/docker/overlay2/0916d9e5504ec1980080869374fe506cf9975e73ce6adf5f166c9a07826787b2/diff",
+                "MergedDir": "/var/lib/docker/overlay2/0683b8e43bb2a1123c29e1a7cc63e65ee80a1e410e34f2bc34e0910ba0e3cd5c/merged",
+                "UpperDir": "/var/lib/docker/overlay2/0683b8e43bb2a1123c29e1a7cc63e65ee80a1e410e34f2bc34e0910ba0e3cd5c/diff",
+                "WorkDir": "/var/lib/docker/overlay2/0683b8e43bb2a1123c29e1a7cc63e65ee80a1e410e34f2bc34e0910ba0e3cd5c/work"
+            },
+            "Name": "overlay2"
+        },
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:36f5f951f60a9fa1d51878e76fc16ba7b752f4d464a21b758a8ac88f0992c488",
+                "sha256:9d7c7cdff1fd98b7c5485354cb90aa38b6248d3a716bc2543e1fcce695c722be",
+                "sha256:eb72f576204562e2b65c6ae68b8bc169ef1626fe3ed8daf2db0f35bf49688fa0",
+                "sha256:22122b5a69b2770c979c3226e202d55750c797f3bc36ccdd95c5d6a7e86f00f2",
+                "sha256:0e1e09d0efcf8a7769500fab8fcaacfb82a6c01053e77a911a56844226378d36",
+                "sha256:5f70bf18a086007016e948b04aed3b82103a36bea41755b6cddfaf10ace3c6ef",
+                "sha256:8e943480e93f0749c369bde316f962c760d2ec52b5882b59549c34975e5feb6f"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "0001-01-01T00:00:00Z"
+        }
+    }
+]

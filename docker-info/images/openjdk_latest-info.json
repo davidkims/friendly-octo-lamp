@@ -1,0 +1,23 @@
+{
+  "image": "openjdk:latest",
+  "image_id": "71260f256d19",
+  "size": "470MB",
+  "created": "2023-02-08 19:46:03 +0000 UTC",
+  "registry": "docker.io",
+  "scanned_at": "2025-09-25T06:32:53Z",
+  "architectures": [],
+  "layers": [],
+  "vulnerabilities": {
+    "total": 0,
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "details": []
+  },
+  "dependencies": [],
+  "security_scan": {
+    "trivy_scan": null,
+    "docker_scout_scan": null
+  }
+}

@@ -56,3 +56,7 @@ logs/
 .env
 .env.local
 .env.*.local
+
+# Docker information files (keep reports, ignore temp files)
+docker-info/**/*.tmp
+docker-info/**/*.log

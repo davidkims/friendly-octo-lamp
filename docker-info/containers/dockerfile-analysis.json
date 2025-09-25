@@ -1,0 +1,30 @@
+{
+  "analysis_metadata": {
+    "timestamp": "2025-09-25T06:33:46Z",
+    "analyzer": "container-file-analyzer",
+    "version": "1.0.0"
+  },
+  "dockerfiles": [
+    {
+      "path": "./Dockerfile",
+      "base_image": "alpine:latest",
+      "instructions": [],
+      "security_issues": [],
+      "best_practices": {
+        "multi_stage_build": false,
+        "non_root_user": false,
+        "minimal_layers": true,
+        "security_scanning": true
+      },
+      "recommendations": [
+        "Use multi-stage builds to reduce image size",
+        "Run as non-root user for security",
+        "Use specific image tags instead of 'latest'",
+        "Implement health checks"
+      ]
+    }
+  ],
+  "compose_files": [],
+  "kubernetes_manifests": [],
+  "helm_charts": []
+}

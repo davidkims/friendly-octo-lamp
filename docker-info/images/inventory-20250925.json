@@ -1,0 +1,18 @@
+{
+  "metadata": {
+    "generated_at": "2025-09-25T06:32:53Z",
+    "registry": "docker.io",
+    "pattern": "*",
+    "scan_type": "automated",
+    "generator": "github-actions"
+  },
+  "images": [],
+  "summary": {
+    "total_images": 0,
+    "vulnerable_images": 0,
+    "critical_vulnerabilities": 0,
+    "high_vulnerabilities": 0,
+    "medium_vulnerabilities": 0,
+    "low_vulnerabilities": 0
+  }
+}

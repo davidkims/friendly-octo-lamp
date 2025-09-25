@@ -1,0 +1,27 @@
+{
+  "analysis_metadata": {
+    "timestamp": "2025-09-25T06:33:46Z",
+    "analyzer": "compose-analyzer",
+    "version": "1.0.0"
+  },
+  "compose_files": [
+    {
+      "path": "./docker-compose.yml",
+      "version": "3.8",
+      "services": [],
+      "networks": [],
+      "volumes": [],
+      "security_analysis": {
+        "exposed_ports": [],
+        "privileged_containers": [],
+        "volume_mounts": [],
+        "environment_variables": []
+      },
+      "recommendations": [
+        "Use secrets management for sensitive data",
+        "Implement proper network segmentation",
+        "Regular security updates for base images"
+      ]
+    }
+  ]
+}

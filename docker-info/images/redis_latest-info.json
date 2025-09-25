@@ -1,0 +1,23 @@
+{
+  "image": "redis:latest",
+  "image_id": "f1285ef3611d",
+  "size": "137MB",
+  "created": "2025-08-18 16:44:26 +0000 UTC",
+  "registry": "docker.io",
+  "scanned_at": "2025-09-25T06:32:53Z",
+  "architectures": [],
+  "layers": [],
+  "vulnerabilities": {
+    "total": 0,
+    "critical": 0,
+    "high": 0,
+    "medium": 0,
+    "low": 0,
+    "details": []
+  },
+  "dependencies": [],
+  "security_scan": {
+    "trivy_scan": null,
+    "docker_scout_scan": null
+  }
+}
