@@ -1,0 +1,226 @@
+name: Unlimited Docker Image Generator
+
+on:
+  workflow_dispatch:
+    inputs:
+      registry:
+        description: 'Target container registry domain'
+        type: choice
+        default: ghcr.io
+        options:
+          - ghcr.io
+          - docker.io
+          - quay.io
+          - gcr.io
+      repository:
+        description: 'Repository path within the registry (e.g. org/project)'
+        required: false
+        default: ''
+      base_tag:
+        description: 'Base tag prefix used for generated images'
+        required: false
+        default: auto
+      tag_count:
+        description: 'How many sequential tags to generate'
+        required: true
+        default: '5'
+      push_to_registry:
+        description: 'Push the generated images to the registry'
+        type: boolean
+        default: true
+      export_tarball:
+        description: 'Export each image as a tarball artifact'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  prepare-matrix:
+    name: Prepare image tag matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.generate.outputs.matrix }}
+      tag_prefix: ${{ steps.generate.outputs.tag_prefix }}
+    steps:
+      - name: Generate matrix
+        id: generate
+        env:
+          BASE_TAG: ${{ github.event.inputs.base_tag || 'auto' }}
+          TAG_COUNT: ${{ github.event.inputs.tag_count || '1' }}
+        run: |
+          set -euo pipefail
+          python - <<'PYGEN'
+import json, os, re, sys
+base = os.environ.get('BASE_TAG') or 'auto'
+count_raw = os.environ.get('TAG_COUNT', '1')
+if not count_raw.isdigit():
+    sys.stderr.write('Tag count must be numeric\n')
+    raise SystemExit(1)
+count = int(count_raw)
+if count < 1:
+    sys.stderr.write('Tag count must be at least 1\n')
+    raise SystemExit(1)
+prefix = re.sub(r'[^A-Za-z0-9_.-]', '-', base)
+if not prefix:
+    prefix = 'auto'
+tags = [f"{prefix}-{i:03d}" for i in range(1, count + 1)]
+with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as fh:
+    fh.write('matrix=' + json.dumps({'tag': tags}) + '\n')
+    fh.write(f'tag_prefix={prefix}\n')
+PYGEN
+
+  build-and-distribute:
+    name: Build and distribute images
+    runs-on: ubuntu-latest
+    needs: prepare-matrix
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.prepare-matrix.outputs.matrix) }}
+    env:
+      REGISTRY: ${{ github.event.inputs.registry }}
+      REPOSITORY: ${{ github.event.inputs.repository != '' && github.event.inputs.repository || github.repository }}
+      PUSH_IMAGES: ${{ github.event.inputs.push_to_registry }}
+      EXPORT_TARBALL: ${{ github.event.inputs.export_tarball }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure Docker buildx is available
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve registry credentials
+        id: registry-creds
+        shell: bash
+        run: |
+          set -euo pipefail
+          registry="${REGISTRY}"
+          if [[ "${PUSH_IMAGES}" != 'true' ]]; then
+            echo "username=" >> "$GITHUB_OUTPUT"
+            echo "password=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$registry" == 'ghcr.io' ]]; then
+            echo "username=${GITHUB_ACTOR}" >> "$GITHUB_OUTPUT"
+            echo "password=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          user='${{ secrets.REGISTRY_USERNAME }}'
+          pass='${{ secrets.REGISTRY_PASSWORD }}'
+          if [[ -z "$user" || -z "$pass" ]]; then
+            echo "::warning::Registry credentials are required for ${registry} but were not provided. Skipping push." >&2
+            echo "username=" >> "$GITHUB_OUTPUT"
+            echo "password=" >> "$GITHUB_OUTPUT"
+            echo "push_disabled=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          echo "username=${user}" >> "$GITHUB_OUTPUT"
+          echo "password=${pass}" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to registry
+        if: env.PUSH_IMAGES == 'true' && steps.registry-creds.outputs.username != ''
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ steps.registry-creds.outputs.username }}
+          password: ${{ steps.registry-creds.outputs.password }}
+
+      - name: Prepare build outputs
+        id: build-outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          outputs=()
+          if [[ "${PUSH_IMAGES}" == 'true' && -z "${push_disabled:-}" && "${{ steps.registry-creds.outputs.username }}" != '' ]]; then
+            outputs+=("type=image,name=${REGISTRY}/${REPOSITORY}:${{ matrix.tag }},push=true")
+          else
+            outputs+=("type=image,name=${REGISTRY}/${REPOSITORY}:${{ matrix.tag }},push=false")
+          fi
+          if [[ "${EXPORT_TARBALL}" == 'true' ]]; then
+            outputs+=("type=docker,dest=$(pwd)/dist/${{ matrix.tag }}.tar")
+          fi
+          {
+            printf 'value<<EOF\n'
+            for line in "${outputs[@]}"; do
+              printf '%s\n' "$line"
+            done
+            printf 'EOF\n'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and optionally push image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          tags: ${{ env.REGISTRY }}/${{ env.REPOSITORY }}:${{ matrix.tag }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ matrix.tag }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          outputs: ${{ steps.build-outputs.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Compress exported tarball
+        if: env.EXPORT_TARBALL == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar_path="dist/${{ matrix.tag }}.tar"
+          if [[ ! -f "$tar_path" ]]; then
+            echo "Expected tar archive $tar_path not found" >&2
+            exit 1
+          fi
+          gzip -f "$tar_path"
+
+      - name: Upload tarball artifact
+        if: env.EXPORT_TARBALL == 'true'
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-${{ matrix.tag }}
+          path: dist/${{ matrix.tag }}.tar.gz
+          if-no-files-found: error
+
+      - name: Publish run summary
+        shell: bash
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          set -euo pipefail
+          image_ref="${REGISTRY}/${REPOSITORY}:${{ matrix.tag }}"
+          tag='${{ matrix.tag }}'
+          {
+            printf '### Image tag `%s`\n' "$tag"
+            printf '- **Image reference:** `%s`\n' "$image_ref"
+            if [[ "${PUSH_IMAGES}" == 'true' && -z "${push_disabled:-}" ]]; then
+              printf '- **Pull with Docker:** `docker pull %s`\n' "$image_ref"
+              cat <<EOF
+- **Curl (manifest download):**
+  ```bash
+  curl -L -H "Authorization: Bearer <TOKEN>" \
+    -H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+    https://${REGISTRY}/v2/${REPOSITORY}/manifests/${tag}
+  ```
+EOF
+            else
+              echo "- _Image push skipped due to missing credentials._"
+            fi
+            if [[ "${EXPORT_TARBALL}" == 'true' && -n "${ARTIFACT_URL}" ]]; then
+              cat <<EOF
+- **Download tarball with curl:**
+  ```bash
+  curl -L -H 'Authorization: token <YOUR_GITHUB_TOKEN>' \
+    -o docker-image-${tag}.zip \
+    '${ARTIFACT_URL}'
+  unzip docker-image-${tag}.zip
+  ```
+  _Requires a fine-grained token with **Actions: read** permission._
+EOF
+            fi
+            echo
+          } >> "$GITHUB_STEP_SUMMARY"
