@@ -103,7 +103,45 @@ Automated Docker image analysis and vulnerability scanning.
 - `image_pattern` - Image search pattern
 - `include_vulnerabilities` - Enable vulnerability scanning
 
-### 3. Bulk Directory and Permission Management
+### 3. Unlimited Docker Image Generator
+**File:** `.github/workflows/docker-image-autogen.yml`
+
+Matrix-driven Docker image generation with on-demand distribution.
+
+**Highlights:**
+- Generate sequential image tags from a base prefix (e.g. `auto-001`, `auto-002`, ...)
+- Push images to GHCR out-of-the-box or other registries with provided credentials
+- Export each build as a compressed tarball artifact
+- Provide official `curl` commands for both registry manifest access and artifact downloads
+
+**Manual Trigger Parameters:**
+- `registry` - Target registry domain (defaults to `ghcr.io`)
+- `repository` - Repository path; defaults to the current repository owner/name when left blank
+- `base_tag` - Prefix for generated tags (sanitized for registry compatibility)
+- `tag_count` - Number of sequential tags to create (e.g. `10` to produce `prefix-001`..`prefix-010`)
+- `push_to_registry` - Enable/disable registry publishing
+- `export_tarball` - Enable/disable tarball artifact export for each image
+
+**Download via curl:**
+After the workflow runs, check the job summary for ready-to-run commands such as:
+
+```bash
+# Retrieve the image manifest directly from the registry (token required)
+curl -L -H "Authorization: Bearer <TOKEN>" \
+  -H 'Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json' \
+  https://ghcr.io/v2/<owner>/<image>/manifests/prefix-001
+
+# Download the generated tarball artifact (requires GitHub token with Actions:read)
+curl -L -H 'Authorization: token <YOUR_GITHUB_TOKEN>' \
+  -o docker-image-prefix-001.zip \
+  "https://api.github.com/repos/<owner>/<repo>/actions/artifacts/<artifact-id>/zip"
+unzip docker-image-prefix-001.zip
+```
+
+> ℹ️ For non-GHCR registries, configure `REGISTRY_USERNAME` and `REGISTRY_PASSWORD` secrets so the workflow can authenticate before pushing.
+
+
+### 4. Bulk Directory and Permission Management
 **File:** `.github/workflows/bulk-directory-management.yml`
 
 Comprehensive directory and permission automation.
@@ -126,7 +164,7 @@ Comprehensive directory and permission automation.
 - `custom_directories` - Additional directories to create
 - `dry_run` - Preview mode
 
-### 4. Container File Update and Management  
+### 5. Container File Update and Management  
 **File:** `.github/workflows/container-file-update.yml`
 
 Container security enhancement and modernization.
